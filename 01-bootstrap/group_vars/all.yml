@@ -1,0 +1,2 @@
+# Backed by JFrog Artifactory Docker registry (HA, geo-replicated)
+container_registry: "registry.woolies.internal:5000"

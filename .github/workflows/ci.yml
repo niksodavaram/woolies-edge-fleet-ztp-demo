@@ -1,0 +1,154 @@
+name: CI - Packer + Ansible + Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PIP_CACHE_DIR: ${{ github.workspace }}/.pip-cache
+
+jobs:
+  packer-validate:
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/packer:1.11
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Packer template
+        working-directory: 00-provisioning/packer
+        run: |
+          packer init rhel9-edge.pkr.hcl
+          packer validate rhel9-edge.pkr.hcl
+
+  packer-build:
+    runs-on: ubuntu-latest
+    needs: packer-validate
+    container:
+      image: hashicorp/packer:1.11
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Golden Image
+        working-directory: 00-provisioning/packer
+        run: |
+          packer init rhel9-edge.pkr.hcl
+          packer build -var-file=vars/store-prod.pkrvars.hcl rhel9-edge.pkr.hcl
+
+      - name: Upload Packer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-output
+          path: 00-provisioning/packer/output/
+
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: .pip-cache
+          key: pip-yamllint-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-yamllint-
+
+      - name: Install yamllint
+        run: |
+          pip install --cache-dir $PIP_CACHE_DIR yamllint
+
+      - name: Run yamllint
+        run: |
+          if [ -f .yamllint.yml ]; then
+            yamllint -c .yamllint.yml .
+          else
+            yamllint .
+          fi
+
+  ansible-lint:
+    runs-on: ubuntu-latest
+    needs: yamllint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: .pip-cache
+          key: pip-ansible-lint-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-ansible-lint-
+
+      - name: Install ansible-lint
+        run: |
+          pip install --cache-dir $PIP_CACHE_DIR ansible-lint ansible-core
+          if [ -f collections/requirements.yml ]; then
+            ansible-galaxy collection install -r collections/requirements.yml
+          fi
+
+      - name: Run ansible-lint
+        working-directory: 01-bootstrap
+        run: ansible-lint
+
+  sonar-scan:
+    runs-on: ubuntu-latest
+    needs: [yamllint, ansible-lint]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: SonarQube Scan
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip
+          unzip sonar-scanner.zip
+          ./sonar-scanner-*/bin/sonar-scanner
+  push-artifacts:
+    runs-on: ubuntu-latest
+    needs: packer-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Packer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packer-output
+          path: packer-output
+
+      - name: Push QCOW2 to Artifactory
+        env:
+          ARTIFACTORY_URL: ${{ secrets.ARTIFACTORY_URL }}
+          ARTIFACTORY_USER: ${{ secrets.ARTIFACTORY_USER }}
+          ARTIFACTORY_PASSWORD: ${{ secrets.ARTIFACTORY_PASSWORD }}
+        run: |
+          FILE=$(ls packer-output/*.qcow2 | head -n1)
+          curl -u "${ARTIFACTORY_USER}:${ARTIFACTORY_PASSWORD}" \
+            -T "${FILE}" \
+            "${ARTIFACTORY_URL}/woolies-edge-golden/$(basename ${FILE})"

@@ -334,6 +334,28 @@ High‑level:
 - Run `pre-commit` locally (YAML + Ansible lint) before pushing.  
 - All changes to `04-secrets-cicd/` require security review.
 
----
+1. Create a feature branch from `main`.
+2. Ensure `pre-commit` passes locally.
+3. Raise a PR with:
+   - Link to Jira ticket (e.g. EDGEPLT-123)
+   - Impacted layers (Day 0, Day 1, etc.)
+1. At least one approval from platform team is required.
 
+### All files require platform team review
+*           @woolies/platform-team
+
+### Security sensitive
+04-secrets-cicd/*   @woolies/security-team
+
+### Migration runbooks
+migration/*         @woolies/platform-team @woolies/store-ops
+
+---
+## Security Policy
+
+- Secrets must never be committed to Git.
+- All credentials are stored in HashiCorp Vault and consumed via External Secrets Operator.
+- Changes to `04-secrets-cicd/*` require security team review.
+- SELinux is enforced on all nodes; workloads are expected to run under restricted SCC.
+- ---
 *Maintained by the Edge Platform Engineering team (reference design). In a real Woolies deployment, this would be adapted to existing tooling, networks, and governance.*  
