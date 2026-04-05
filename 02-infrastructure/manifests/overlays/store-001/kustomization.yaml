@@ -1,0 +1,18 @@
+# ============================================================
+# Kustomize Overlay — Store 001 (Bondi Junction NSW)
+# Overrides base SNO config with store-specific network/hostname
+# ============================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patchesStrategicMerge:
+  - install-config-patch.yaml
+  - agent-config-patch.yaml
+
+commonLabels:
+  store-id: NSW001
+  store-location: bondi-junction
+  migration-phase: P3

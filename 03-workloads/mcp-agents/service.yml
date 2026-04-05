@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-rollout-controller
+  namespace: woolies-hub
+  labels:
+    app: mcp-rollout-controller
+    tier: control-plane
+spec:
+  selector:
+    app: mcp-rollout-controller
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090

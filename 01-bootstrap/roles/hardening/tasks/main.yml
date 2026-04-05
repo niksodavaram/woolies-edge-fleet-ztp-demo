@@ -1,0 +1,82 @@
+---
+# ============================================================
+# Role: hardening
+# Purpose: CIS RHEL 9 Level 2 — SSH, SELinux, Firewall
+# Idempotent — safe to re-run on all fleet nodes
+# ============================================================
+
+- name: "[hardening] Ensure SELinux is enforcing"
+  ansible.posix.selinux:
+    policy: "{{ selinux_policy }}"
+    state: "{{ selinux_state }}"
+  tags: selinux
+
+- name: "[hardening] Set SSH hardening config"
+  ansible.builtin.template:
+    src: sshd_woolies.conf.j2
+    dest: /etc/ssh/sshd_config.d/99-woolies.conf
+    owner: root
+    group: root
+    mode: '0600'
+  notify: restart sshd
+  tags: ssh
+
+- name: "[hardening] Configure firewalld — drop all, allow explicit services"
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    permanent: true
+    state: enabled
+    zone: public
+  loop:
+    - ssh
+    - https
+  tags: firewall
+
+- name: "[hardening] Block unnecessary services via firewalld"
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    permanent: true
+    state: disabled
+    zone: public
+  loop:
+    - dhcpv6-client
+    - cockpit
+  tags: firewall
+
+- name: "[hardening] Apply CIS sysctl network hardening"
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - { key: 'net.ipv4.ip_forward',                   value: '0' }
+    - { key: 'net.ipv4.conf.all.send_redirects',       value: '0' }
+    - { key: 'net.ipv4.conf.all.accept_redirects',     value: '0' }
+    - { key: 'net.ipv4.conf.all.log_martians',         value: '1' }
+    - { key: 'kernel.randomize_va_space',              value: '2' }
+    - { key: 'fs.suid_dumpable',                       value: '0' }
+  tags: sysctl
+
+- name: "[hardening] Configure auditd rules"
+  ansible.builtin.copy:
+    src: files/99-woolies-audit.rules
+    dest: /etc/audit/rules.d/99-woolies.rules
+    owner: root
+    group: root
+    mode: '0640'
+  notify: reload auditd
+  tags: audit
+
+- name: "[hardening] Initialise AIDE database (HIDS)"
+  ansible.builtin.command: aide --init
+  args:
+    creates: /var/lib/aide/aide.db.new
+  tags: aide
+
+- name: "[hardening] Move AIDE database to active location"
+  ansible.builtin.command: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  args:
+    creates: /var/lib/aide/aide.db
+  tags: aide

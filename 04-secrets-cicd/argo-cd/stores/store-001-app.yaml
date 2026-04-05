@@ -1,0 +1,25 @@
+# Child Application — Store 001 Bondi Junction
+# Generated pattern: one file per store, managed by app-of-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: store-001-bondi
+  namespace: argocd
+  labels:
+    store-id: NSW001
+    migration-phase: P3
+spec:
+  project: woolies-edge-fleet
+  source:
+    repoURL: https://github.com/niksodavaram/woolies-edge-fleet-ztp
+    targetRevision: main
+    path: 03-workloads
+    plugin:
+      name: kustomize-build
+  destination:
+    server: https://10.101.1.10:6443   # Store 001 OCP API
+    namespace: woolies-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

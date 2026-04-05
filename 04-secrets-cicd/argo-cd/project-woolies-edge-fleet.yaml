@@ -1,0 +1,46 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: woolies-edge-fleet
+  namespace: argocd
+spec:
+  description: "Edge store clusters for Woolworths (SNO on Dell DTCP)"
+
+  # Restrict what repos and clusters this project can touch
+  sourceRepos:
+    - 'https://github.com/niksodavaram/woolies-edge-fleet-ztp'
+  destinations:
+    - namespace: 'woolies-*'
+      server: https://kubernetes.default.svc
+    - namespace: 'woolies-*'
+      server: '*'
+
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  # Project-level roles for different teams
+  roles:
+    - name: platform-admin
+      description: "Platform team full control"
+      policies:
+        - p, proj:woolies-edge-fleet:platform-admin, applications, *, woolies-edge-fleet/*, allow
+      groups:
+        - woolies-platform-admins
+
+    - name: store-ops
+      description: "Store operations can sync and view their store apps"
+      policies:
+        - p, proj:woolies-edge-fleet:store-ops, applications, get, woolies-edge-fleet/*, allow
+        - p, proj:woolies-edge-fleet:store-ops, applications, sync, woolies-edge-fleet/*, allow
+        - p, proj:woolies-edge-fleet:store-ops, logs, get, woolies-edge-fleet/*, allow
+      groups:
+        - woolies-store-ops
+
+    - name: security
+      description: "Security team read-only visibility"
+      policies:
+        - p, proj:woolies-edge-fleet:security, applications, get, woolies-edge-fleet/*, allow
+        - p, proj:woolies-edge-fleet:security, logs, get, woolies-edge-fleet/*, allow
+      groups:
+        - woolies-security

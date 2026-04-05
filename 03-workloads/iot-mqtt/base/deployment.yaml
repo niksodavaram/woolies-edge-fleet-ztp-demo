@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iot-mqtt-broker
+  namespace: woolies-iot
+  labels:
+    app: iot-mqtt-broker
+    tier: edge-messaging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iot-mqtt-broker
+  template:
+    metadata:
+      labels:
+        app: iot-mqtt-broker
+    spec:
+      containers:
+        - name: mqtt
+          image: eclipse-mosquitto:2.0
+          ports:
+            - containerPort: 1883
+              name: mqtt
+            - containerPort: 8883
+              name: mqtt-tls
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: iot-mqtt-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iot-mqtt-config
+  namespace: woolies-iot
+data:
+  mosquitto.conf: |
+    listener 1883
+    allow_anonymous false
+    password_file /mosquitto/config/passwordfile

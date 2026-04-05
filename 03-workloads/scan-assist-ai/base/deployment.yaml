@@ -1,0 +1,62 @@
+# ============================================================
+# Scan Assist AI — Base Kubernetes Deployment
+# Woolworths AI microservice for self-checkout scan assistance
+# GPU overlay adds resource limits for stores with GPU nodes
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scan-assist-ai
+  namespace: woolies-apps
+  labels:
+    app: scan-assist-ai
+    tier: ai-inference
+    managed-by: argocd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scan-assist-ai
+  template:
+    metadata:
+      labels:
+        app: scan-assist-ai
+        version: "1.0.0"
+    spec:
+      containers:
+        - name: scan-assist
+          image: registry.woolies.internal:5000/scan-assist-ai:1.0.0
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          env:
+            - name: MODEL_BACKEND
+              value: "cpu"   # Overridden to 'gpu' in GPU overlay
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: scan-assist-secrets
+                  key: redis-url
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5

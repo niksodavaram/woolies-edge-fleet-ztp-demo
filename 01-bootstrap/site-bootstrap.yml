@@ -1,0 +1,58 @@
+---
+# ============================================================
+# Woolworths Edge Fleet — Master Bootstrap Playbook
+# Day 1: Run against any new store after Kickstart ZTP
+# Usage: ansible-playbook site-bootstrap.yml -i inventory/hosts.ini --limit store_001
+# ============================================================
+
+- name: "Phase 1 — OS Hardening & Security Baseline"
+  hosts: woolies_fleet
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: "Verify image version matches fleet standard"
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'RedHat'
+          - ansible_distribution_major_version == '9'
+        fail_msg: "Node is not running RHEL 9 — aborting bootstrap"
+      tags: preflight
+
+  roles:
+    - role: hardening
+      tags: hardening
+    - role: networking
+      tags: networking
+    - role: telemetry
+      tags: telemetry
+
+- name: "Phase 2 — OpenShift SNO Pre-flight Preparation"
+  hosts: openshift_sno
+  become: true
+
+  roles:
+    - role: k8s-prep
+      tags: k8s_prep
+
+- name: "Phase 3 — Migration Phase Gate Check"
+  hosts: woolies_fleet
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: "Record bootstrap completion in node metadata"
+      ansible.builtin.copy:
+        content: |
+          {
+            "bootstrap_completed_at": "{{ ansible_date_time.iso8601 }}",
+            "ansible_version": "{{ ansible_version.full }}",
+            "migration_phase": "{{ migration_phase | default('P1') }}",
+            "bootstrapped_by": "{{ lookup('env', 'USER') }}"
+          }
+        dest: /etc/woolies/bootstrap-status.json
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      tags: metadata

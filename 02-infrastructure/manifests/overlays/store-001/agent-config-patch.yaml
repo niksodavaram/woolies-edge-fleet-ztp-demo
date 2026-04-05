@@ -1,0 +1,22 @@
+apiVersion: v1alpha1
+kind: AgentConfig
+metadata:
+  name: store-001-bondi
+rendezvousIP: 10.101.1.10
+hosts:
+  - hostname: store-001-bondi
+    interfaces:
+      - name: bond0
+        macAddress: "AA:BB:CC:DD:01:10"
+    networkConfig:
+      interfaces:
+        - name: bond0
+          ipv4:
+            address:
+              - ip: 10.101.1.10
+                prefix-length: 24
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: 10.101.1.1
+            next-hop-interface: bond0

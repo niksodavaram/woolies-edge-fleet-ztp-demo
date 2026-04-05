@@ -1,0 +1,150 @@
+# ============================================================
+# Woolworths Edge Fleet — RHEL Image Builder TOML Manifest
+# Compatible with: composer-cli / osbuild / RHEL Image Builder
+# Used by Packer AND direct osbuild pipelines
+# Phased migration: tracks image lineage from VMware → RHEL
+# ============================================================
+
+[customizations]
+  # Base OS identity
+  hostname = "store-edge-node"
+  timezone = "Australia/Sydney"
+  language = "en_AU.UTF-8"
+  keyboard = "us"
+
+[customizations.kernel]
+  # Optimise for edge — reduce idle latency, enable iommu for KubeVirt GPU passthrough
+  append = "quiet audit=1 selinux=1 enforcing=1 intel_iommu=on iommu=pt"
+
+[[customizations.sshkey]]
+  user = "ansible"
+  key  = "ssh-ed25519 REPLACE_WITH_ANSIBLE_PUBKEY woolies-fleet-deploy"
+
+[[customizations.user]]
+  name        = "ansible"
+  description = "Ansible Service Account — Fleet Bootstrap"
+  groups      = ["wheel", "docker"]
+  password    = "$6$REPLACE_WITH_HASHED_PASSWORD"
+
+[[customizations.user]]
+  name        = "store-admin"
+  description = "Local Store Admin — Break-Glass Access"
+  groups      = ["wheel"]
+  password    = "$6$REPLACE_WITH_HASHED_PASSWORD"
+
+[customizations.firewall]
+  # Only open what OpenShift SNO needs
+  ports = [
+    "22/tcp",    # SSH (management)
+    "80/tcp",    # HTTP redirect
+    "443/tcp",   # HTTPS / OCP API passthrough
+    "6443/tcp",  # OCP API server
+    "22623/tcp", # OCP Machine Config Server (bootstrap only)
+    "9090/tcp",  # Cockpit (internal monitoring)
+    "8443/tcp"   # Internal registry
+  ]
+
+[customizations.services]
+  enabled  = ["sshd", "chronyd", "auditd", "NetworkManager", "firewalld"]
+  disabled = ["bluetooth", "avahi-daemon", "cups", "rpcbind", "nfs-server"]
+
+# ---- Package Sets -------------------------------------------------------
+# Core packages required for edge node + OpenShift SNO pre-reqs
+[[packages]]
+  name    = "openshift-clients"
+  version = "*"
+
+[[packages]]
+  name    = "podman"
+  version = "*"
+
+[[packages]]
+  name    = "skopeo"
+  version = "*"
+
+[[packages]]
+  name    = "nmstate"
+  version = "*"
+
+[[packages]]
+  name    = "coreos-installer"
+  version = "*"
+
+[[packages]]
+  name    = "aide"
+  version = "*"  # HIDS — CIS requirement
+
+[[packages]]
+  name    = "rsyslog"
+  version = "*"
+
+[[packages]]
+  name    = "audit"
+  version = "*"
+
+[[packages]]
+  name    = "chrony"
+  version = "*"
+
+[[packages]]
+  name    = "bind-utils"
+  version = "*"
+
+[[packages]]
+  name    = "net-tools"
+  version = "*"
+
+[[packages]]
+  name    = "tcpdump"
+  version = "*"
+
+# ---- Migration Tracking -------------------------------------------------
+# This section documents the phased migration from Windows/VMware → RHEL
+# Used by the migration-status pipeline to track per-store progress
+
+[migration]
+  schema_version    = "2"
+  source_platform   = "VMware ESXi 7.0 on Dell DTCP"
+  target_platform   = "RHEL 9 + OpenShift SNO on Dell DTCP"
+  legacy_workloads  = ["checkout-app", "price-label-service", "pos-integration"]
+  kubevirt_bridge   = true   # Windows VMs run via KubeVirt during transition
+
+[migration.phases]
+  # Phase-level TOML config — used by GitOps pipeline to gate deployments
+  current = "P1"  # Update per store: P0 | P1 | P2 | P3 | P4
+
+  [migration.phases.P0]
+    name        = "Foundation"
+    description = "Golden Image built, validated on bare metal"
+    gate        = "packer-build-pass"
+
+  [migration.phases.P1]
+    name        = "Pilot ZTP"
+    description = "5 pilot stores, kickstart + SNO, Windows co-existence"
+    gate        = "smoke-test-pass"
+
+  [migration.phases.P2]
+    name        = "Fleet Bootstrap"
+    description = "100 stores Ansible-provisioned, KubeVirt Windows VMs live"
+    gate        = "ansible-idempotency-check"
+
+  [migration.phases.P3]
+    name        = "Full GitOps"
+    description = "1000 stores ArgoCD-managed, Vault secrets, observability"
+    gate        = "argocd-sync-healthy"
+
+  [migration.phases.P4]
+    name        = "Decommission"
+    description = "VMware/Windows retired, cutover complete"
+    gate        = "legacy-workload-off"
+
+# ---- Image Provenance ---------------------------------------------------
+[provenance]
+  image_name     = "woolies-rhel9-edge"
+  image_version  = "1.0.0"
+  base_os        = "RHEL 9.4"
+  build_pipeline = "gitlab-ci"
+  cis_level      = "2"
+  selinux_mode   = "enforcing"
+  fips_enabled   = false
+  sbom_format    = "spdx-json"

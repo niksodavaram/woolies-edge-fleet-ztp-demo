@@ -1,0 +1,12 @@
+# GPU overlay — applied to stores with NVIDIA GPU on Dell DTCP
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patchesStrategicMerge:
+  - gpu-resources-patch.yaml
+
+commonLabels:
+  store-variant: gpu

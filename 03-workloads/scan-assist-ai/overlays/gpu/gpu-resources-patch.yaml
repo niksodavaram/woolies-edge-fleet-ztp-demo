@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scan-assist-ai
+  namespace: woolies-apps
+spec:
+  template:
+    spec:
+      containers:
+        - name: scan-assist
+          env:
+            - name: MODEL_BACKEND
+              value: "gpu"
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: "4Gi"
+              cpu: "2000m"
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: gpu-model-cache
+              mountPath: /models
+      volumes:
+        - name: gpu-model-cache
+          persistentVolumeClaim:
+            claimName: scan-assist-model-cache
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule

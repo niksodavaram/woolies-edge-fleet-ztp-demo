@@ -1,0 +1,7 @@
+apiVersion: v1
+baseDomain: woolies.internal
+metadata:
+  name: store-001-bondi
+networking:
+  machineNetwork:
+    - cidr: 10.101.1.0/24

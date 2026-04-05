@@ -1,0 +1,40 @@
+# ============================================================
+# ArgoCD — App of Apps Pattern
+# The "NAB Logic" — single sync point for all 1,000 stores
+# Each store's workloads defined as child Applications
+# Sync policy: automated with self-heal and prune
+# ============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: woolies-fleet-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: woolies-fleet-root
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"   # Deploy root first
+spec:
+  project: woolies-edge-fleet
+  source:
+    repoURL: https://github.com/niksodavaram/woolies-edge-fleet-ztp
+    targetRevision: main
+    path: 04-secrets-cicd/argo-cd/stores
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

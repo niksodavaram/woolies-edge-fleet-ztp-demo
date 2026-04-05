@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dds-gateway
+  namespace: woolies-iot
+  labels:
+    app: dds-gateway
+    tier: edge-messaging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dds-gateway
+  template:
+    metadata:
+      labels:
+        app: dds-gateway
+    spec:
+      containers:
+        - name: dds-gw
+          image: registry.woolies.internal:5000/dds-gateway:latest
+          env:
+            - name: MQTT_BROKER
+              value: "iot-mqtt-broker.woolies-iot.svc.cluster.local:1883"
+            - name: DDS_DOMAIN_ID
+              value: "10"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

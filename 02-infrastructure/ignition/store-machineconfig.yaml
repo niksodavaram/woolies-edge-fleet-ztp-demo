@@ -1,0 +1,28 @@
+# ============================================================
+# MachineConfig — Applied to all SNO nodes post-install
+# Configures store-specific kernel args, crio settings, local DNS
+# ============================================================
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: 99-woolies-store-settings
+spec:
+  kernelArguments:
+    - intel_iommu=on     # KubeVirt GPU/PCIe passthrough
+    - iommu=pt
+    - audit=1
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+        - path: /etc/woolies/node-role
+          mode: 0644
+          contents:
+            source: data:,edge-store-sno
+        - path: /etc/crio/crio.conf.d/99-woolies.conf
+          mode: 0644
+          contents:
+            source: data:,[crio.runtime]%0Adefault_runtime%20=%20%22runc%22%0Alog_level%20=%20%22warn%22

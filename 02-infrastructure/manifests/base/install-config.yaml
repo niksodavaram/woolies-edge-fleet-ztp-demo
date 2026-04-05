@@ -1,0 +1,37 @@
+# ============================================================
+# OpenShift SNO — Install Config (Base / Global)
+# Woolworths standard — do NOT edit store-specific fields here
+# Use Kustomize overlays for store-001, store-002, etc.
+# ============================================================
+apiVersion: v1
+baseDomain: woolies.internal
+metadata:
+  name: woolies-sno-base
+compute:
+  - name: worker
+    replicas: 0              # SNO — no separate workers
+controlPlane:
+  name: master
+  replicas: 1               # Single Node OpenShift
+platform:
+  none: {}                  # Bare-metal on Dell DTCP
+fips: false
+pullSecret: VAULT_INJECTED  # Never store here — injected by ESO
+sshKey: VAULT_INJECTED
+neworkType: OVNKubernetes
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: OVERRIDE_IN_OVERLAY  # Store subnet
+imageContentSources:
+  - mirrors:
+      - registry.woolies.internal:5000/openshift4
+    source: quay.io/openshift-release-dev/ocp-release
+  - mirrors:
+      - registry.woolies.internal:5000/openshift4
+    source: quay.io/openshift-release-dev/ocp-v4.0-art-dev

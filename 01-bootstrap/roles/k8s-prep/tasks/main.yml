@@ -1,0 +1,73 @@
+---
+# ============================================================
+# Role: k8s-prep
+# Purpose: Prepare RHEL 9 node for OpenShift SNO install
+# Loads required kernel modules, configures sysctl, disables swap
+# ============================================================
+
+- name: "[k8s-prep] Disable swap permanently"
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+
+- name: "[k8s-prep] Remove swap from /etc/fstab"
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\s+swap\s+.*)$'
+    replace: '# \1  # disabled by woolies k8s-prep'
+
+- name: "[k8s-prep] Load required kernel modules"
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - br_netfilter
+    - overlay
+    - ip_vs
+    - ip_vs_rr
+    - ip_vs_wrr
+    - ip_vs_sh
+    - nf_conntrack
+
+- name: "[k8s-prep] Persist kernel modules across reboots"
+  ansible.builtin.copy:
+    content: |
+      br_netfilter
+      overlay
+      ip_vs
+      ip_vs_rr
+      ip_vs_wrr
+      ip_vs_sh
+      nf_conntrack
+    dest: /etc/modules-load.d/openshift-sno.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: "[k8s-prep] Configure sysctl for Kubernetes networking"
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    reload: true
+  loop:
+    - { key: 'net.bridge.bridge-nf-call-iptables',  value: '1' }
+    - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+    - { key: 'net.ipv4.ip_forward',                 value: '1' }
+    - { key: 'fs.inotify.max_user_watches',          value: '524288' }
+    - { key: 'fs.inotify.max_user_instances',        value: '8192' }
+    - { key: 'vm.max_map_count',                     value: '262144' }
+
+- name: "[k8s-prep] Pull OpenShift SNO Agent-Based Installer binary"
+  ansible.builtin.get_url:
+    url: "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{{ ocp_version }}/openshift-install-linux.tar.gz"
+    dest: /usr/local/bin/openshift-install-linux.tar.gz
+    mode: '0755'
+  tags: ocp_install
+
+- name: "[k8s-prep] Extract openshift-install binary"
+  ansible.builtin.unarchive:
+    src: /usr/local/bin/openshift-install-linux.tar.gz
+    dest: /usr/local/bin/
+    remote_src: true
+    creates: /usr/local/bin/openshift-install
+  tags: ocp_install

@@ -1,0 +1,44 @@
+# ============================================================
+# OpenShift SNO — Agent-Based Installer Config (Base)
+# Applied to ALL Woolworths stores
+# Store-specific values overridden via Kustomize overlays
+# ============================================================
+apiVersion: v1alpha1
+kind: AgentConfig
+metadata:
+  name: woolies-sno-base
+rendezvousIP: OVERRIDE_IN_OVERLAY   # Set per store in overlays/store-xxx
+hosts:
+  - hostname: store-edge-node
+    role: master                     # SNO = single master
+    interfaces:
+      - name: bond0
+        macAddress: OVERRIDE_IN_OVERLAY
+    networkConfig:
+      interfaces:
+        - name: bond0
+          type: bond
+          state: up
+          ipv4:
+            enabled: true
+            address:
+              - ip: OVERRIDE_IN_OVERLAY
+                prefix-length: 24
+            dhcp: false
+          link-aggregation:
+            mode: active-backup
+            options:
+              miimon: "140"
+            slaves:
+              - ens3f0
+              - ens3f1
+      dns-resolver:
+        config:
+          server:
+            - 10.0.0.53
+            - 10.0.0.54
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: OVERRIDE_IN_OVERLAY  # Store gateway
+            next-hop-interface: bond0

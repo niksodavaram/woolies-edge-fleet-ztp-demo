@@ -1,0 +1,64 @@
+---
+# ============================================================
+# Woolworths Edge Fleet — Global Ansible Variables
+# Applied to ALL stores across the fleet
+# Secrets are NEVER stored here — fetched from HashiCorp Vault
+# ============================================================
+
+# --- Identity & Registry -------------------------------------------------
+woolies_fleet_name: "woolies-edge-fleet"
+woolies_internal_domain: "woolies.internal"
+container_registry: "registry.woolies.internal:5000"
+rhel_satellite_url: "https://satellite.woolies.internal"
+
+# --- Networking ----------------------------------------------------------
+dns_servers:
+  - 10.0.0.53   # Primary internal DNS
+  - 10.0.0.54   # Secondary internal DNS
+  - 1.1.1.1     # Cloudflare fallback (egress only)
+
+ntp_servers:
+  - ntp1.woolies.internal
+  - ntp2.woolies.internal
+  - au.pool.ntp.org
+
+# NIC bonding config for Dell DTCP (dual 10GbE)
+bond_interface: bond0
+bond_mode: "active-backup"   # Failover — store resilience
+bond_members:
+  - ens3f0
+  - ens3f1
+
+# --- SELinux & Security --------------------------------------------------
+selinux_policy: targeted
+selinux_state: enforcing
+ssh_permit_root_login: "no"
+ssh_password_auth: "no"
+
+# --- OpenShift SNO -------------------------------------------------------
+ocp_version: "4.15"
+ocp_pull_secret_vault_path: "secret/woolies/ocp/pull-secret"
+ocp_api_vip_offset: 10       # .10 per store subnet (e.g., 10.101.x.10)
+
+# --- KubeVirt (Windows Bridge) ------------------------------------------
+kubevirt_enabled: false      # Overridden per store in host_vars
+windows_image_pvc: "windows-checkout-app-v3.2"
+windows_vm_cpu: 4
+windows_vm_memory: "8Gi"
+
+# --- Observability -------------------------------------------------------
+dynatrace_tenant: "https://REPLACE.live.dynatrace.com"
+dynatrace_token_vault_path: "secret/woolies/dynatrace/api-token"
+
+splunk_hec_url: "https://splunk.woolies.internal:8088"
+splunk_index: "woolies_edge_fleet"
+splunk_token_vault_path: "secret/woolies/splunk/hec-token"
+
+# --- Migration Phase Gate ------------------------------------------------
+# Used by roles/migration-gate to skip tasks not relevant to current phase
+migration_enabled_phases:
+  - P0
+  - P1
+  - P2
+  - P3
+  - P4

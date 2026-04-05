@@ -1,0 +1,32 @@
+# ============================================================
+# Dynatrace Operator — Edge Store Observability
+# Deployed via ArgoCD on all SNO stores
+# Token injected from HashiCorp Vault via External Secrets
+# ============================================================
+apiVersion: dynatrace.com/v1beta1
+kind: DynaKube
+metadata:
+  name: woolies-edge
+  namespace: dynatrace
+  labels:
+    managed-by: argocd
+spec:
+  apiUrl: https://REPLACE.live.dynatrace.com/api
+  tokens: dynatrace-tokens      # Secret created by External Secrets Operator
+  oneAgent:
+    classicFullStack:
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/master
+          operator: Exists
+  activeGate:
+    capabilities:
+      - routing
+      - kubernetes-monitoring
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 300m
+        memory: 512Mi
