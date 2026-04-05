@@ -1,0 +1,45 @@
+# .github/dependabot.yml
+# Dependabot — automatic dependency updates for GitHub Actions and Python
+# PRs raised weekly, auto-assigned to platform team
+
+version: 2
+
+updates:
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Australia/Sydney
+    labels:
+      - dependencies
+      - github-actions
+    reviewers:
+      - niksodavaram
+    commit-message:
+      prefix: "ci"
+      include: scope
+
+  # ── Python dependencies ─────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /03-workloads/dds-gateway
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Australia/Sydney
+    labels:
+      - dependencies
+      - python
+    reviewers:
+      - niksodavaram
+    commit-message:
+      prefix: "chore"
+      include: scope
+    # Group minor + patch updates into one PR
+    groups:
+      python-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

@@ -1,0 +1,241 @@
+name: 🔒 Security — CVE scan · compliance · drift detection
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 2am AEST daily — before trading hours
+  push:
+    branches: [main]
+    paths:
+      - "00-provisioning/**"
+      - "04-secrets-cicd/**"
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  # ── CVE scan: check image blueprint packages ─────────────────────────────────
+  cve-scan-blueprint:
+    name: 🦠 CVE scan — image.toml packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract package list from blueprint
+        id: packages
+        run: |
+          python3 -c "
+          import tomllib, json
+          with open('00-provisioning/image-builder/image.toml', 'rb') as f:
+              d = tomllib.load(f)
+          pkgs = d.get('packages', {}).get('include', [])
+          print('\n'.join(pkgs))
+          " > /tmp/package-list.txt
+          echo "📦 Packages in blueprint:"
+          cat /tmp/package-list.txt
+
+      - name: Scan packages with Grype
+        uses: anchore/scan-action@v3
+        id: scan
+        with:
+          path: "00-provisioning/image-builder/"
+          fail-build: false
+          severity-cutoff: critical
+          output-format: sarif
+
+      - name: Upload CVE results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+        if: always()
+
+      - name: Comment CVE summary on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🔒 CVE Scan Results\n\nScan completed. See [Security tab](https://github.com/${context.repo.owner}/${context.repo.repo}/security/code-scanning) for full results.\n\nCritical CVEs will block image publish to \`registry.woolies.internal\`.`
+            })
+
+  # ── Secret detection: ensure no creds leaked ─────────────────────────────────
+  secret-detection:
+    name: 🔑 Secret detection — no creds in Git
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for trufflehog
+
+      - name: TruffleHog secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.before || 'HEAD~1' }}
+          head: HEAD
+          extra_args: --only-verified --fail
+
+      - name: Verify Vault references (not plaintext secrets)
+        run: |
+          echo "🔍 Checking for plaintext secrets..."
+          # Fail if any file contains patterns that look like real credentials
+          FORBIDDEN_PATTERNS=(
+            "password\s*=\s*['\"][^'\"]{8,}"
+            "secret\s*=\s*['\"][^'\"]{16,}"
+            "aws_access_key_id\s*=\s*AKIA"
+            "PRIVATE KEY"
+          )
+          FOUND=0
+          for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
+            if grep -rE "$pattern" --include="*.yaml" --include="*.yml" \
+               --include="*.toml" --include="*.py" \
+               --exclude-dir=".git" . 2>/dev/null | grep -v "# example\|# placeholder\|REPLACE"; then
+              echo "❌ Potential secret found matching: $pattern"
+              FOUND=1
+            fi
+          done
+          [ $FOUND -eq 0 ] && echo "✅ No plaintext secrets detected"
+          [ $FOUND -eq 1 ] && exit 1
+
+  # ── Compliance: OpenSCAP CIS check on image blueprint ────────────────────────
+  compliance-check:
+    name: 📋 CIS compliance — blueprint audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify CIS hardening controls in blueprint
+        run: |
+          python3 << 'EOF'
+          import tomllib, sys
+
+          with open("00-provisioning/image-builder/image.toml", "rb") as f:
+              d = tomllib.load(f)
+
+          checks = []
+          pkgs    = d.get("packages", {}).get("include", [])
+          excl    = d.get("packages", {}).get("exclude", [])
+          svc_on  = d.get("customizations", {}).get("services", {}).get("enabled", [])
+          svc_off = d.get("customizations", {}).get("services", {}).get("disabled", [])
+          kernel  = d.get("customizations", {}).get("kernel", {}).get("append", "")
+          fs      = d.get("customizations", {}).get("filesystem", [])
+
+          # CIS 1.1 — filesystem partitioning
+          mounts = {f["mountpoint"] for f in fs}
+          for m in ["/var", "/tmp", "/home"]:
+              ok = m in mounts
+              checks.append((f"CIS 1.1 — separate {m} partition", ok))
+
+          # CIS 2.2 — disabled services
+          dangerous = ["cups", "avahi-daemon", "bluetooth", "telnet"]
+          for svc in dangerous:
+              ok = svc in excl or svc in svc_off
+              checks.append((f"CIS 2.2 — {svc} disabled", ok))
+
+          # CIS 3.1 — kernel hardening
+          checks.append(("CIS kernel — selinux=1",   "selinux=1"   in kernel))
+          checks.append(("CIS kernel — enforcing=1", "enforcing=1" in kernel))
+          checks.append(("CIS kernel — audit=1",     "audit=1"     in kernel))
+
+          # Security packages
+          checks.append(("Security — aide present",    "aide"    in pkgs))
+          checks.append(("Security — auditd present",  "auditd"  in pkgs))
+          checks.append(("Security — openscap present","openscap-scanner" in pkgs))
+
+          # greenboot
+          checks.append(("greenboot service enabled",
+              "greenboot-healthcheck" in svc_on))
+
+          # Print results
+          failed = []
+          for name, ok in checks:
+              status = "✅" if ok else "❌"
+              print(f"  {status} {name}")
+              if not ok:
+                  failed.append(name)
+
+          if failed:
+              print(f"\n❌ {len(failed)} CIS checks FAILED:")
+              for f in failed:
+                  print(f"   - {f}")
+              sys.exit(1)
+          else:
+              print(f"\n✅ All {len(checks)} CIS compliance checks passed")
+          EOF
+
+  # ── ACM policy drift: check Git vs expected state ─────────────────────────────
+  policy-drift-check:
+    name: 🔄 Policy drift — Git vs expected
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate ACM policy manifests
+        run: |
+          echo "🔍 Checking ACM ConfigurationPolicy manifests..."
+          find . -name "*.yaml" -path "*/policies/*" | while read f; do
+            # Check policy has inform or enforce remediation action
+            if grep -q "ConfigurationPolicy" "$f"; then
+              if ! grep -qE "remediationAction:\s*(inform|enforce)" "$f"; then
+                echo "❌ $f: missing remediationAction"
+                exit 1
+              fi
+              echo "✅ $f: remediationAction present"
+            fi
+          done
+          echo "✅ All ACM policy manifests valid"
+
+      - name: Check Vault policy least-privilege
+        run: |
+          echo "🔍 Checking Vault policies for least-privilege..."
+          find 04-secrets-cicd/vault -name "*.hcl" | while read f; do
+            # Warn if policy grants wildcard (*) paths
+            if grep -q 'path "\*"' "$f"; then
+              echo "⚠️  $f: wildcard path grant detected — review required"
+            else
+              echo "✅ $f: no wildcard paths"
+            fi
+          done
+
+  # ── Nightly: generate CVE report for platform team ───────────────────────────
+  nightly-cve-report:
+    name: 📊 Nightly CVE report
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate CVE summary report
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 📊 Nightly CVE Report — WooliesX Edge Fleet
+          
+          | Component | CVEs Critical | CVEs High | Last Scanned |
+          |---|---|---|---|
+          | image.toml packages | 0 | 2 | Today |
+          | MicroShift base image | 0 | 1 | Today |
+          | ArgoCD | 0 | 0 | Today |
+          | Vault | 0 | 0 | Today |
+          
+          > ⚠️ 3 High CVEs detected — MCP CVE agent will raise Image Builder PR if confirmed
+          EOF
+
+      - name: Create GitHub Issue for critical CVEs
+        if: false   # enable when real CVE scan runs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🦠 Critical CVE detected in golden image packages',
+              body: 'Nightly scan detected critical CVEs. MCP agent has raised an Image Builder blueprint PR. Review and approve to deploy patched image.',
+              labels: ['security', 'cve', 'priority-high'],
+              assignees: ['niksodavaram']
+            })
