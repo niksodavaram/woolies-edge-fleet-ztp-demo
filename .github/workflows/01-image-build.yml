@@ -37,7 +37,7 @@ jobs:
     name: 🔍 Validate image.toml blueprint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Validate TOML syntax
         run: |
@@ -76,7 +76,7 @@ jobs:
     name: 📋 Ansible lint + syntax check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install ansible-lint
         run: pip install ansible-lint ansible-core
@@ -101,7 +101,7 @@ jobs:
     name: ☸️  Validate K8s manifests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install kubeconform
         run: |
@@ -140,7 +140,7 @@ jobs:
       security-events: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Scan for hardcoded secrets (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
@@ -175,7 +175,7 @@ jobs:
     name: 🐍 Python — lint, type-check, test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -210,7 +210,7 @@ jobs:
       image_version: ${{ steps.meta.outputs.version }}
       image_digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract image metadata
         id: meta
