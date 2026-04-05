@@ -294,20 +294,20 @@ stateDiagram-v2
 > These commands are for demo / lab use; adapt to your CI/CD and infra.
 
 ```bash
-# 1. Build the Golden Image
+1. Build the Golden Image
 cd 00-provisioning/packer
 packer init .
 packer build -var-file=vars/store-prod.pkrvars.hcl rhel9-edge.pkr.hcl
 
-# 2. Bootstrap a new store node
+2. Bootstrap a new store node
 cd 01-bootstrap
 ansible-playbook site-bootstrap.yml -i inventory/hosts.ini --limit store_001
 
-# 3. Deploy OpenShift SNO for that store
+3. Deploy OpenShift SNO for that store
 cd 02-infrastructure/manifests/overlays/store-001
 kustomize build . | oc apply -f -
 
-# 4. Bring workloads under GitOps control
+4. Bring workloads under GitOps control
 cd 04-secrets-cicd/argo-cd
 kubectl apply -f project-woolies-edge-fleet.yaml   # once per hub
 kubectl apply -f app-of-apps.yaml
@@ -357,5 +357,16 @@ migration/*         @woolies/platform-team @woolies/store-ops
 - All credentials are stored in HashiCorp Vault and consumed via External Secrets Operator.
 - Changes to `04-secrets-cicd/*` require security team review.
 - SELinux is enforced on all nodes; workloads are expected to run under restricted SCC.
+- All OpenShift and workload images are pulled from an **internal mirror
+  registry** (`registry.woolies.internal:5000`), configured via
+  `imageContentSources` and mirrored with `oc adm release mirror`.
+  Stores can run in disconnected mode with no direct internet access.
 - ---
+### Architecture decisions
+
+- ADR-001: Why SNO over MicroShift at edge.
+- ADR-002: Why KubeVirt as Windows bridge during migration.
+- ADR-003: Why External Secrets + Vault over Sealed Secrets/SOPS.
+- ---
+
 *Maintained by the Edge Platform Engineering team (reference design). In a real Woolies deployment, this would be adapted to existing tooling, networks, and governance.*  

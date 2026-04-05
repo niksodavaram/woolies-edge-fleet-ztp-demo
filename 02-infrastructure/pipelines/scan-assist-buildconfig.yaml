@@ -1,0 +1,20 @@
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: scan-assist-ai
+  namespace: woolies-ci
+spec:
+  serviceAccount: mcp-builds
+  source:
+    git:
+      uri: https://github.com/niksodavaram/scan-assist-ai
+    type: Git
+  strategy:
+    dockerStrategy:
+      from:
+        kind: DockerImage
+        name: "registry.access.redhat.com/ubi9/ubi-minimal:9.4"
+  output:
+    to:
+      kind: ImageStreamTag
+      name: "scan-assist-ai:1.0.0"

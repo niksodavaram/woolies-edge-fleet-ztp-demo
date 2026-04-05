@@ -1,0 +1,61 @@
+apiVersion: ran.openshift.io/v1
+kind: SiteConfig
+metadata:
+  name: store-001-bondi
+  namespace: ztp-site
+spec:
+  baseDomain: woolies.internal
+  pullSecretRef:
+    name: ocp-pull-secret
+  clusterImageSetNameRef: ocp-4.15.0
+  sshPublicKey: ssh-ed25519 AAAA... woolies-fleet-deploy
+
+  clusters:
+    - clusterName: store-001-bondi
+      clusterLabels:
+        common: "true"
+        store-id: "NSW001"
+        group-sno: ""
+        migration-phase: "P3"
+      networkType: OVNKubernetes
+      apiVIP: 10.101.1.10
+      ingressVIP: 10.101.1.11
+
+      nodes:
+        - hostName: store-001-bondi
+          role: master
+          bmcAddress: redfish-virtualmedia+http://10.0.0.10/redfish/v1/Systems/1
+          bmcCredentialsName:
+            name: store-001-bmc-creds
+          bootMACAddress: "AA:BB:CC:DD:01:10"
+          nodeNetwork:
+            interfaces:
+              - name: bond0
+                macAddress: "AA:BB:CC:DD:01:10"
+            config:
+              interfaces:
+                - name: bond0
+                  type: bond
+                  state: up
+                  ipv4:
+                    enabled: true
+                    address:
+                      - ip: 10.101.1.10
+                        prefix-length: 24
+                  link-aggregation:
+                    mode: active-backup
+                    options:
+                      miimon: "140"
+                    slaves:
+                      - ens3f0
+                      - ens3f1
+              dns-resolver:
+                config:
+                  server:
+                    - 10.0.0.53
+                    - 10.0.0.54
+              routes:
+                config:
+                  - destination: 0.0.0.0/0
+                    next-hop-address: 10.101.1.1
+                    next-hop-interface: bond0

@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - siteconfig-store-001.yaml
+  - policygenerator-common.yaml
+  - source-crs/common/networkpolicy-default-deny.yaml
+  # (add more source-crs as needed)

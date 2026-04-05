@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: scan-assist-ai
+  namespace: woolies-apps
+spec:
+  selector:
+    app: scan-assist-ai
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: scan-assist-ai
+  namespace: woolies-apps
+spec:
+  to:
+    kind: Service
+    name: scan-assist-ai
+  port:
+    targetPort: http
+  tls:
+    termination: edge

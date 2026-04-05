@@ -1,0 +1,23 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: PolicyGenerator
+metadata:
+  name: woolies-common
+  namespace: ztp-common
+policyDefaults:
+  namespace: ztp-common
+  remediationAction: enforce
+  placement:
+    labelSelector:
+      matchExpressions:
+        - key: common
+          operator: In
+          values: ["true"]
+policies:
+  - name: woolies-common-node-config
+    manifests:
+      - path: source-crs/common/machineconfig-kernel-args.yaml
+      - path: source-crs/common/machineconfig-auditd.yaml
+  - name: woolies-common-security
+    manifests:
+      - path: source-crs/common/namespace-woolies-infra.yaml
+      - path: source-crs/common/networkpolicy-default-deny.yaml
