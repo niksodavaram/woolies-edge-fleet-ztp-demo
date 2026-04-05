@@ -1,372 +1,610 @@
-# Woolworths Edge Fleet — Zero Touch Provisioning (ZTP) 🚀
+# Woolworths Edge Fleet — Zero-Touch Provisioning (ZTP)
+ 
 <p align="center">
-  <img alt="RHEL" src="https://img.shields.io/badge/RHEL-9-red?logo=redhat&logoColor=white" />
-  <img alt="OpenShift" src="https://img.shields.io/badge/OpenShift-SNO-red?logo=redhatopenshift&logoColor=white" />
-  <img alt="Packer" src="https://img.shields.io/badge/Packer-immutable%20images-1b4b72?logo=packer&logoColor=white" />
-  <img alt="Ansible" src="https://img.shields.io/badge/Ansible-fleet%20automation-ee0000?logo=ansible&logoColor=white" />
-  <img alt="ArgoCD" src="https://img.shields.io/badge/ArgoCD-GitOps-orange?logo=argo&logoColor=white" />
-  <img alt="Vault" src="https://img.shields.io/badge/Vault-secrets%20management-000000?logo=vault&logoColor=white" />
-  <img alt="KubeVirt" src="https://img.shields.io/badge/KubeVirt-Windows%20bridge-326ce5?logo=kubernetes&logoColor=white" />
-  <img alt="MQTT" src="https://img.shields.io/badge/MQTT-edge%20messaging-660066?logo=eclipsemosquitto&logoColor=white" />
+  <img alt="RHEL 9" src="https://img.shields.io/badge/RHEL-9_for_Edge-EE0000?logo=redhat&logoColor=white" />
+  <img alt="MicroShift" src="https://img.shields.io/badge/MicroShift-4.16-EE0000?logo=redhatopenshift&logoColor=white" />
+  <img alt="SNO" src="https://img.shields.io/badge/OpenShift-SNO_(large_stores)-EE0000?logo=redhatopenshift&logoColor=white" />
+  <img alt="ACM" src="https://img.shields.io/badge/Red_Hat_ACM-fleet_mgmt-EE0000?logo=redhat&logoColor=white" />
+  <img alt="ArgoCD" src="https://img.shields.io/badge/ArgoCD-GitOps-F4821F?logo=argo&logoColor=white" />
+  <img alt="Ansible" src="https://img.shields.io/badge/Ansible-fleet_hardening-EE0000?logo=ansible&logoColor=white" />
+  <img alt="Vault" src="https://img.shields.io/badge/Vault-secrets-000000?logo=vault&logoColor=white" />
+  <img alt="KubeVirt" src="https://img.shields.io/badge/KubeVirt-Windows_bridge-326CE5?logo=kubernetes&logoColor=white" />
+  <img alt="MQTT" src="https://img.shields.io/badge/MQTT-cold_chain_IoT-660066?logo=eclipsemosquitto&logoColor=white" />
+  <img alt="RTI DDS" src="https://img.shields.io/badge/RTI_DDS-low_latency_bus-FF6600" />
+  <img alt="Kafka" src="https://img.shields.io/badge/Kafka-event_streaming-231F20?logo=apachekafka&logoColor=white" />
 </p>
-
-> **Enterprise-grade Edge Platform** for deploying and managing RHEL 9 + OpenShift Single Node (SNO) across 1,000+ Woolworths retail stores, with full GitOps, security, and observability.
-
-This repo is a **reference implementation** of the full **Day 0 → Day 4** lifecycle:
-
-- 🧱 Day 0: Golden Image (Packer + RHEL Image Builder TOML)
-- 🤖 Day 0.5: Zero-Touch Install (Kickstart)
-- 🔐 Day 1: Fleet Hardening & Networking (Ansible)
-- ☸️ Day 1.5: OpenShift SNO Clusters (Agent-Based Installer)
-- 🧩 Day 2: Business Workloads (AI, Windows via KubeVirt, MQTT/DDS)
-- 🔁 Day 3+: GitOps, Secrets, MCP Agents, and Observability at scale
-
+ 
+<p align="center">
+  <strong>Reference implementation of a Day 0 → Day 4 edge platform lifecycle</strong><br/>
+  Migrating 3,000+ Woolworths AU+NZ stores from Windows/VMware to RHEL 9 + MicroShift/SNO<br/>
+  Zero human touch from hardware power-on to first transaction — ~25 minutes per store
+</p>
+ 
 ---
-
-## Architecture Overview 🗺️
-
-```text
-                 +-------------------------------+
-                 |       Central Hub (OCP)       |
-                 |  ACM · ArgoCD · Vault · MCP   |
-                 +---------------+---------------+
-                                 ^
-                                 | GitOps (pull) + Metrics/Logs
-                                 |
-+---------------------+          |        +----------------------+
-|   Store Edge Node   |----------+--------|   Observability Hub  |
-|  RHEL 9 + SNO/MicroShift      |        | Thanos · Loki · Graf |
-|                             MQTT/DDS   +----------------------+
-|  - Scan-Assist AI             |
-|  - Checkout Windows (KubeVirt)|
-|  - IoT MQTT Broker            |
-|  - DDS Gateway                |
-+---------------------+         |
-        ^                       |
-        | ZTP (PXE/ISO)         |
-        |                       v
-+---------------------+   +----------------------+
-|  Golden Image       |   |  GitHub / CI         |
-|  Packer + image.toml|   |  Packer · Lint · QA  |
-+---------------------+   +----------------------+
+ 
+> **Disclaimer:** This is a personal reference design created by Nireekshan Sodavaram for interview and demonstration purposes. It is not internal Woolworths/WooliesX documentation. All technology references are based solely on publicly available information. In a real deployment this would be adapted to Woolworths' existing tooling, networks, and governance.
+ 
+---
+ 
+## Why This Exists
+ 
+Woolworths runs 3,000+ stores across AU and NZ on a legacy Windows/VMware edge estate. Every store has a local server running POS, inventory, self-checkout, cold chain monitoring and loyalty — all on fragile Windows VMs that require on-site engineers for updates, have no fleet visibility, and fail silently when WAN drops.
+ 
+This repo is a reference implementation of the platform that replaces it: **immutable RHEL 9 + MicroShift/SNO at every store**, managed as a fleet by ACM + ArgoCD from a central hub, observable via Thanos + Loki + Grafana, and self-healing via MCP AI agents. A new store goes live in 25 minutes. A bad update rolls back automatically in under 5 minutes. All 3,000 stores are visible on one Grafana dashboard.
+ 
+---
+ 
+## Architecture
+ 
 ```
-
-**Key ideas:**
-
-- **Stores** run a hardened **RHEL 9 Edge** image with **SNO** and local IoT messaging (MQTT + DDS).
-- A **central OCP hub** runs ACM, ArgoCD, Vault, and **MCP agents** that orchestrate rollouts, rollbacks, and CVE patching.
-- Everything is driven from **Git (this repo)**: Day 0–2 manifests, migration phases, and governance.
-
----
-
-## Phased Migration: Windows/VMware → RHEL + OpenShift 🧬
-
-We migrate from **Windows on VMware (Dell DTCP)** to **RHEL + OpenShift SNO** using KubeVirt as a bridge:
-
-| Phase | Name           | Duration   | Description                                                                 |
-|-------|----------------|-----------|-----------------------------------------------------------------------------|
-| **P0** | Foundation     | Weeks 1–2 | Build and scan Golden Image, validate on pilot hardware (CIS, OpenSCAP).   |
-| **P1** | Pilot ZTP      | Weeks 3–4 | 5 pilot stores, SNO deployed; Windows VMs imported to KubeVirt (co-exist). |
-| **P2** | Fleet Bootstrap| Weeks 5–8 | ~100 stores via Ansible; Windows workloads running via KubeVirt on SNO.    |
-| **P3** | Full GitOps    | Weeks 9–12| ~1,000 stores under ArgoCD; Vault secrets and full observability.          |
-| **P4** | Decommission   | Weeks 13–16| VMware/Windows retired, KubeVirt removed, all apps containerised.         |
-
-The current phase per image/store is tracked in `image.toml` and Ansible inventory, so **MCP agents and ArgoCD** can gate rollouts safely.
-
----
-
-## Technology Stack ⚙️
-
-| Layer            | Technology / Pattern                                                                 |
-|------------------|--------------------------------------------------------------------------------------|
-| OS               | RHEL 9 (Edge / Image Mode, SELinux enforcing, CIS L2)                               |
-| Image Build      | Packer + `image.toml` (RHEL Image Builder, provenance + migration metadata)         |
-| Provisioning     | Kickstart (Zero-Touch / unattended Dell DTCP install)                               |
-| Configuration    | Ansible (CIS hardening, networking, k8s-prep, telemetry bootstrap)                  |
-| Container Platform| OpenShift SNO (Agent-Based Installer)                                               |
-| GitOps           | ArgoCD (App-of-Apps, AppProject RBAC)                                               |
-| Secrets          | HashiCorp Vault + External Secrets Operator (no secrets in Git)                     |
-| Legacy VMs       | KubeVirt (Windows checkout-app bridge during P1–P3)                                 |
-| Messaging        | MQTT broker (store-level IoT) + DDS Gateway (RTI DDS domain bridge)                 |
-| Observability    | Dynatrace + Splunk (or OCP Prometheus/Thanos/Loki)                                  |
-| Control Plane AI | MCP Agents (rollout controller, auto-heal, CVE wave gating)                         |
-| Hardware         | Dell DTCP (PowerEdge / Precision Edge), Cisco SD-WAN                                |
-
----
-
-## Repository Structure 📁
-
-```text
-woolies-edge-fleet-ztp/
-├── 00-provisioning/          # Day 0 — Golden Image (Packer + TOML + Kickstart)
-│   ├── packer/               # Packer templates, CIS hardening scripts
-│   ├── image-metadata/       # RHEL Image Builder TOML (image.toml)
-│   └── kickstart/            # ZTP answer files (store-default.ks)
-├── 01-bootstrap/             # Day 1 — Ansible Fleet Bootstrap
-│   ├── inventory/            # 1,000 store COP, phases, groups
-│   ├── roles/                # hardening, k8s-prep, networking, telemetry
-│   └── site-bootstrap.yml    # Master playbook (Saab-style baseline)
-├── 02-infrastructure/        # Day 1.5 — OpenShift SNO Manifests
-│   ├── manifests/            # install-config + AgentConfig (base + overlays)
-│   └── ignition/             # MachineConfig tuning for edge nodes
-├── 03-workloads/             # Day 2 — Business Apps + Messaging + MCP
-│   ├── scan-assist-ai/       # AI microservice (CPU/GPU overlays)
-│   ├── legacy-windows/       # Windows checkout via KubeVirt
-│   ├── monitoring/           # Dynatrace / Splunk / OCP operators
-│   ├── iot-mqtt/             # MQTT broker for in-store devices
-│   ├── dds-gateway/          # DDS ↔ MQTT bridge for deterministic pub/sub
-│   └── mcp-agents/           # MCP rollout controller (hub-side control-plane)
-└── 04-secrets-cicd/          # Day 3+ — Governance, GitOps, Secrets
-    ├── argo-cd/              # App-of-Apps, AppProject, per-store Apps
-    ├── external-secrets/     # ESO + Vault SecretStore + ExternalSecret
-    └── vault/                # Vault policies (least privilege)
+                     ┌─────────────────────────────────────────┐
+                     │         Central Hub — Bella Vista DC     │
+                     │  Full OCP · ACM · ArgoCD · Vault · MCP  │
+                     │  Thanos Query · Loki · Grafana fleet     │
+                     │  RHEL Image Builder · Internal registry  │
+                     └──────────────────┬──────────────────────┘
+                                        │ GitOps pull + klusterlet
+                                        │ Thanos remote_write
+                                        │ Loki log ship
+                     ┌──────────────────▼──────────────────────┐
+                     │    Regional Hub — one per state (SNO)    │
+                     │  Thanos Receive relay · Loki aggregator  │
+                     │  ACM spoke · SD-WAN POP · ~500 stores    │
+                     └──────────────────┬──────────────────────┘
+                              Cisco SD-WAN (MPLS + broadband + 4G/5G failover)
+                     ┌──────────────────▼──────────────────────┐
+                     │         Store Edge Node                  │
+                     │  RHEL 9 for Edge (ostree · image mode)  │
+                     │  MicroShift (Metro/liquor) │ SNO (large) │
+                     │                                          │
+                     │  ┌─────────────────────────────────┐    │
+                     │  │  RTI DDS local pub-sub bus       │    │
+                     │  │  POS ↔ Inventory ↔ Loyalty      │    │
+                     │  │  Bayesian outlier filter         │    │
+                     │  └──────────────┬──────────────────┘    │
+                     │                 │                        │
+                     │  MQTT broker ◄──┘    Kafka local buffer  │
+                     │  (cold chain IoT)    (POS → BigQuery)    │
+                     │                                          │
+                     │  Prometheus · Promtail · Alertmanager    │
+                     │  ACM klusterlet · greenboot · ostree     │
+                     │  KubeVirt (Windows bridge P1–P3 only)    │
+                     └──────────────────────────────────────────┘
+                              registry.woolies.internal:5000
+                              (internal mirror — disconnected-safe)
 ```
-
+ 
+**Key design principles:**
+ 
+- **Offline-first** — every store operates fully when SD-WAN drops. Kafka queues, MQTT alerts locally, ostree keeps the OS healthy. ACM reconciles drift on reconnect.
+- **Immutable OS** — RHEL image mode (ostree). Every store boots the same signed image. greenboot rolls back automatically in under 5 minutes if unhealthy.
+- **Zero secrets in Git** — all credentials fetched from Vault via External Secrets Operator at runtime.
+- **Fleet as product** — platform team owns golden images and GitOps pipelines. Store teams never SSH into a node.
+- **Internal mirror registry** — `registry.woolies.internal:5000` with `oc adm release mirror`. Stores run fully disconnected — no direct internet required.
+ 
 ---
-
-### Sequence diagram for GitOps sync and Vault-backed secret injection
-
+ 
+## Store Topology — MicroShift vs SNO
+ 
+| Store type | Platform | RAM | Count | Notes |
+|---|---|---|---|---|
+| Large supermarket | **OpenShift SNO** | 16 GB | ~800 | KubeVirt Windows bridge during P1–P3 |
+| Metro / convenience | **MicroShift** | 8 GB | ~1,400 | Lightweight, same ACM klusterlet |
+| Liquor / specialist | **MicroShift** | 4 GB | ~800 | Minimal footprint |
+ 
+**Rule:** if a store needs the KubeVirt Windows bridge during migration → SNO (OpenShift Virtualization required). All other stores → MicroShift (same RHEL base, same ACM/ArgoCD GitOps, same observability pipeline, lighter resource footprint).
+ 
+See [ADR-001 — SNO vs MicroShift decision](docs/adrs/ADR-001-sno-vs-microshift.md).
+ 
+---
+ 
+## Phased Migration — Windows/VMware → RHEL + MicroShift/SNO
+ 
+Migration follows a **parallel-run strategy**: Windows VM stays running at each store until the new platform is proven green for 48 hours. No store goes offline. No customer impact.
+ 
+| Phase | Name | Duration | What happens | Stores |
+|---|---|---|---|---|
+| **P0** | Foundation | Wks 1–2 | Build + CIS-scan golden image. Validate on pilot hardware (OpenSCAP). ACM hub + GitHub repo live. | 0 |
+| **P1** | Pilot ZTP | Wks 3–4 | 5 pilot stores. SNO deployed. Windows VMs imported to KubeVirt — store trades on Windows while RHEL/SNO runs in parallel. All data flows validated. | 5 |
+| **P2** | Fleet bootstrap | Wks 5–8 | ~100 stores via Ansible. Windows workloads running via KubeVirt on SNO. All data flows green: POS→Kafka→BigQuery, inventory→SAP, cold chain→Vertex AI, Everyday Rewards. | ~100 |
+| **P3** | Canary rollout | Mths 3–6 | **50 stores/week** via ArgoCD canary waves. Health gates auto-pause on error spike. Windows removed per store after 48 hr clean run. ACM compliance dashboard live. | ~3,000 |
+| **P4** | Full fleet live | Mths 7–18 | All 3,000+ stores AU+NZ on RHEL + MicroShift/SNO. Windows VMs decommissioned. KubeVirt bridge removed. ZTP default for all new store openings. | 3,000+ |
+ 
+Migration phase per store is tracked in `image.toml` — MCP agents and ArgoCD wave gates read this field to control rollout velocity.
+ 
+### Migration state machine
+ 
 ```mermaid
-sequenceDiagram
-  actor PlatformEngineer
-  participant GitRepo as Git_Repo
-  participant ArgoCD as ArgoCD_Root_App
-  participant StoreCluster as Store_SNO_Cluster
-  participant ESO as External_Secrets_Operator
-  participant Vault as HashiCorp_Vault
-  participant Workload as Scan_Assist_AI_Pod
-
-  PlatformEngineer->>GitRepo: Commit ArgoCD store Application
-  GitRepo-->>ArgoCD: Repo change detected (poll/webhook)
-  ArgoCD->>ArgoCD: Reconcile woolies-fleet-root app-of-apps
-  ArgoCD->>StoreCluster: Create/Update child Application (store-001-bondi)
-  ArgoCD->>StoreCluster: Apply manifests (workloads, ESO, ExternalSecrets)
-
-  StoreCluster->>ESO: ExternalSecret for ocp-pull-secret created
-  ESO->>Vault: Authenticate via Kubernetes auth (role woolies-edge-fleet)
-  Vault-->>ESO: Auth token
-  ESO->>Vault: Read secret data at secret/woolies/ocp/pull-secret
-  Vault-->>ESO: Secret payload (.dockerconfigjson)
-  ESO->>StoreCluster: Create Kubernetes Secret ocp-pull-secret
-
-  ArgoCD->>StoreCluster: Ensure workloads (scan-assist-ai, dynatrace, etc.) are Synced/Healthy
-  StoreCluster->>Workload: Mount injected Secret as env/volume
-  Workload-->>PlatformEngineer: Application running with Vault-backed secrets
-```
----
-
-### Migration Phases (Mermaid State Diagram)
-
-```javascript
 stateDiagram-v2
   [*] --> P0
-
-  state P0 {
-    [*] --> Foundation
-    Foundation: Golden_Image_built_and_validated
-    Foundation --> [*]
-  }
-
-  state P1 {
-    [*] --> Pilot_ZTP
-    Pilot_ZTP: 5_pilot_stores
-    Pilot_ZTP --> [*]
-  }
-
-  state P2 {
-    [*] --> Fleet_Bootstrap
-    Fleet_Bootstrap: 100_stores_bootstrapped
-    Fleet_Bootstrap --> [*]
-  }
-
-  state P3 {
-    [*] --> Full_GitOps
-    Full_GitOps: 1000_stores_under_ArgoCD
-    Full_GitOps --> [*]
-  }
-
-  state P4 {
-    [*] --> Decommission
-    Decommission: VMware_Windows_retired
-    Decommission --> [*]
-  }
-
-  note right of Pilot_ZTP
-    Kickstart_ZTP
-    SNO_installed
-    Windows-co-existence
-  end note
-
-  note right of Fleet_Bootstrap
-    Windows_VMs_on_KubeVirt
-  end note
-
-  note right of Full_GitOps
-    Vault_secrets
-    full_observability
-  end note
-
-  note right of Decommission
-    KubeVirt_bridge_removed
-  end note
-
-  P0 --> P1: migration.current=P1
-  P1 --> P2: migration.current=P2
-  P2 --> P3: migration.current=P3
-  P3 --> P4: migration.current=P4
-
-  P1 --> P0: Rollback
-  P2 --> P1: Rollback
-  P3 --> P2: Rollback
-  P4 --> P3: Rollback
+ 
+  state P0 { Foundation: Golden image built, CIS validated, ACM hub live }
+  state P1 { Pilot: 5 stores · KubeVirt Windows bridge · parallel run }
+  state P2 { Bootstrap: ~100 stores · Windows on KubeVirt · flows validated }
+  state P3 { Canary: 50 stores/week · ArgoCD waves · health gates }
+  state P4 { Fleet: 3000+ stores · Windows decommissioned · ZTP default }
+ 
+  P0 --> P1 : image.toml migration.current_phase=P1
+  P1 --> P2 : image.toml migration.current_phase=P2
+  P2 --> P3 : image.toml migration.current_phase=P3
+  P3 --> P4 : image.toml migration.current_phase=P4
+ 
+  P1 --> P0 : Rollback
+  P2 --> P1 : Rollback
+  P3 --> P2 : Rollback
+  P4 --> P3 : Rollback
 ```
-## Day 0 → Day 4 Flow (Principal View) 🧠
-
-### Day 0 – Golden Image (Packer + TOML)
-
-- `image.toml` defines:
-  - OS identity, packages, services, firewall, kernel args.  
-  - Migration metadata: current phase (P0–P4), source/target platform, KubeVirt bridge flag.
-- Packer (`rhel9-edge.pkr.hcl`) builds:
-  - QCOW2 / ISO images with CIS hardening applied at build time.
-  - Provenance stamped into `/etc/os-release` and `/etc/woolies/image.toml`.
-
-**Outcome:** Every store boots a **known-good, audited, immutable** RHEL image.
-
-### Day 0.5 – Zero Touch Install (Kickstart)
-
-- `store-default.ks` drives:
-  - Disk layout (CIS-partitioning), SELinux enforcing, minimal packages.  
-  - Ansible service account + initial SSH key.  
-  - Post-install hook writes `/etc/woolies/node-metadata.json` (image version, phase, platform).
-
-**Outcome:** A store tech can **boot and walk away**; no manual install steps.
-
-### Day 1 – Fleet Bootstrap (Ansible)
-
-- `site-bootstrap.yml` runs end-to-end:
-  - `hardening` role: SELinux, SSH, firewall, auditd, AIDE.  
-  - `k8s-prep` role: kernel modules, sysctl, swap off, pulls `openshift-install`.  
-  - `telemetry` role: Dynatrace/Splunk agent enablement.
-- Targeting:
-  - `inventory/hosts.ini` groups by **state**, **phase**, and **capabilities** (GPU/KubeVirt).
-
-**Outcome:** All nodes converge on a consistent **security and networking baseline**, ready for OpenShift.
-
-### Day 1.5 – OpenShift SNO (Agent-Based Installer)
-
-- `02-infrastructure/manifests/base/`:
-  - Global `install-config.yaml` + `AgentConfig` (SNO pattern).
-- `overlays/store-001/`:
-  - Store-specific IP, hostname, MAC, machineNetwork.
-
-**Outcome:** Each store’s **cluster definition is declarative**, reproducible, and committed to Git.
-
-### Day 2 – Workloads (AI, Windows, MQTT, DDS, MCP)
-
-- `scan-assist-ai`: AI microservice with CPU/GPU overlays.
-- `legacy-windows/checkout-app.yaml`: KubeVirt VM that keeps Windows checkout running inside SNO during migration.
-- `iot-mqtt`: Store-local MQTT broker for devices (scales, sensors, cameras).
-- `dds-gateway`: Bridges DDS domains to MQTT/Kafka for low-latency control flows.
-- `mcp-agents/rollout-controller`:
-  - Hub-side controller (conceptually) that:
-    - Reads metrics (Thanos), Git state (this repo), and migration phases.  
-    - Proposes **wave rollouts** via Git PRs.  
-    - Requests rollbacks when SLOs are breached.
-
-**Outcome:** Business functionality moves onto the new platform with **coexistence** (Windows via KubeVirt) and **safe, observed rollouts**.
-
-### Day 3+ – GitOps, Secrets, Governance
-
-- ArgoCD:
-  - `app-of-apps.yaml` = single entry point for the whole fleet.  
-  - `project-woolies-edge-fleet.yaml` = AppProject with RBAC (platform-admin, store-ops, security).
-- Vault + ESO:
-  - `vault-secretstore.yaml` + `ExternalSecret` objects fetch all secrets from Vault.  
-  - `vault-policy-woolies.hcl` enforces least privilege per store and per team.
-
-**Outcome:** All changes go through **Git PRs**, ArgoCD converges the clusters, Vault supplies secrets, and MCP agents help orchestrate at scale.
-
+ 
 ---
-
-## Quick Start (Demo Mode) 🏁
-
-> These commands are for demo / lab use; adapt to your CI/CD and infra.
-
+ 
+## Technology Stack
+ 
+| Layer | Technology | Status |
+|---|---|---|
+| OS | RHEL 9 for Edge — image mode, ostree, SELinux enforcing, CIS L2 | Proposed |
+| Image build | **RHEL Image Builder** (`image.toml` blueprint) — Packer optional CI wrapper | Proposed |
+| OS safety net | **greenboot** health checks + **ostree** auto-rollback — under 5 min | Proposed |
+| Provisioning | Kickstart — zero-touch, unattended, writes `/etc/woolies/node-metadata.json` | Proposed |
+| Configuration | Ansible — CIS hardening, networking, k8s-prep, telemetry bootstrap | Proposed |
+| Container platform | **MicroShift** (Metro/liquor) + **OpenShift SNO** (large stores) | Proposed |
+| Fleet management | Red Hat ACM — hub+spoke, GitOps-native policy engine, klusterlet | Proposed |
+| GitOps | ArgoCD — App-of-Apps, AppProject RBAC, ApplicationSet per store tier | Proposed |
+| Secrets | HashiCorp Vault + External Secrets Operator — zero secrets in Git | Proposed |
+| Windows bridge | **KubeVirt** — runs Windows checkout VM inside SNO during P1–P3 | Proposed |
+| Low-latency bus | **RTI DDS** gateway — intra-store pub-sub, Bayesian outlier filter | Proposed |
+| IoT messaging | **MQTT** (Mosquitto) — cold chain sensors, :1883, local retain, LWT | Proposed |
+| Event streaming | **Kafka** local buffer — POS→BigQuery, WAN-resilient, ordered replay | Proposed |
+| App APM | **Dynatrace** — existing WooliesX confirmed tool, application layer | Existing |
+| Infra observability | Prometheus + **Thanos** + **Loki** + Grafana — fleet infra layer, 3,000 stores one view | Proposed |
+| Platform AI | **MCP agents** — rollout gating, auto-heal, CVE patching, predictive failure | Proposed |
+| Image registry | Internal mirror `registry.woolies.internal:5000` — disconnected-safe | Proposed |
+| Network | Cisco SD-WAN — existing, ZTP trigger, MPLS + broadband + 4G/5G failover | Existing |
+| Hardware | x86\_64 store edge server — 4–16 GB RAM, 120 GB+ SSD, CIS-partitioned | Existing |
+ 
+---
+ 
+## Repository Structure
+ 
+```
+woolies-edge-fleet-ztp/
+│
+├── 00-provisioning/              # Day 0 — Golden Image + ZTP
+│   ├── image-builder/            # RHEL Image Builder blueprint (image.toml)
+│   ├── packer/                   # Optional Packer CI wrapper + hardening scripts
+│   └── kickstart/                # ZTP answer files (store-default.ks)
+│
+├── 01-bootstrap/                 # Day 1 — Ansible Fleet Bootstrap
+│   ├── inventory/                # 3,000 store inventory · phases · groups · states
+│   ├── roles/
+│   │   ├── hardening/            # SELinux · SSH · firewall · auditd · AIDE · CIS
+│   │   ├── k8s-prep/             # kernel modules · sysctl · swap off · openshift-install
+│   │   ├── networking/           # bonded NICs · VLANs · SD-WAN integration
+│   │   └── telemetry/            # Prometheus node exporter · Promtail bootstrap
+│   └── site-bootstrap.yml        # Master playbook
+│
+├── 02-infrastructure/            # Day 1.5 — OpenShift MicroShift + SNO
+│   ├── manifests/
+│   │   ├── base/                 # install-config.yaml + AgentConfig (SNO pattern)
+│   │   └── overlays/             # per-store overlays (IP, hostname, MAC, machineNetwork)
+│   └── microshift/               # MicroShift config.yaml + LVMS storage layout
+│
+├── 03-workloads/                 # Day 2 — Business Apps + Messaging
+│   ├── pos/                      # POS container workload (offline-capable)
+│   ├── inventory/                # Real-time inventory service
+│   ├── cold-chain/               # Cold chain monitor (MQTT subscriber + threshold alerts)
+│   ├── loyalty/                  # Everyday Rewards local calculation pod
+│   ├── scan-assist-ai/           # AI microservice infra layer (CPU/GPU overlays)
+│   ├── windows-bridge/           # KubeVirt VM — Windows checkout during P1–P3
+│   ├── iot-mqtt/                 # Mosquitto MQTT broker (:1883 · local retain · LWT)
+│   ├── dds-gateway/              # RTI DDS ↔ MQTT/Kafka bridge (low-latency pub-sub)
+│   ├── observability/            # Prometheus · Thanos · Loki · Grafana · Alertmanager
+│   └── platform-ai/              # MCP agents (rollout controller · auto-heal · CVE gating)
+│
+├── 04-secrets-cicd/              # Day 3+ — GitOps · Secrets · Governance
+│   ├── argo-cd/                  # App-of-Apps · AppProject · per-store Applications
+│   ├── external-secrets/         # ESO + Vault SecretStore + ExternalSecret objects
+│   └── vault/                    # Vault policies (least privilege per store + team)
+│
+├── 05-migration/                 # Migration runbooks + wave config
+│   ├── phases/                   # P0–P4 runbooks with acceptance criteria
+│   ├── rollback/                 # Per-phase rollback procedures
+│   └── wave-config/              # 50 stores/week canary wave definitions
+│
+└── docs/
+    ├── architecture.md           # Links to interactive architecture diagrams
+    ├── latency-design.md         # RTI DDS + MQTT + Kafka rationale
+    ├── observability.md          # Three-tier Prometheus→Thanos→Grafana pipeline
+    └── adrs/
+        ├── ADR-001-sno-vs-microshift.md
+        ├── ADR-002-kubevirt-windows-bridge.md
+        └── ADR-003-vault-vs-sealed-secrets.md
+```
+ 
+---
+ 
+## Day 0 — Golden Image (`image.toml`)
+ 
+The `image.toml` blueprint is the **single source of truth** for every store node. It defines the OS, packages, hardening, migration phase, store tier, and KubeVirt bridge flag. MCP agents and ArgoCD wave gates read this file to control rollout velocity.
+ 
+```toml
+# 00-provisioning/image-builder/image.toml
+# RHEL Image Builder blueprint — store edge node
+ 
+[customizations]
+  [customizations.kernel]
+    append = "console=ttyS0,115200 rd.luks.options=discard selinux=1 enforcing=1"
+ 
+  [[customizations.user]]
+    name    = "ansible-svc"
+    groups  = ["wheel"]
+    key     = "ssh-ed25519 AAAA... ansible-fleet-key"
+ 
+  [customizations.services]
+    enabled  = ["microshift", "greenboot-healthcheck", "promtail", "node_exporter"]
+    disabled = ["bluetooth", "cups", "avahi-daemon"]
+ 
+  [customizations.firewall]
+    [customizations.firewall.services]
+      enabled  = ["https", "ssh"]
+      disabled = ["telnet", "ftp"]
+ 
+# ── Woolworths migration metadata ─────────────────────────────
+[woolies.migration]
+  current_phase    = "P1"              # P0 | P1 | P2 | P3 | P4
+  source_platform  = "windows-vmware"
+  target_platform  = "rhel9-microshift"
+  kubevirt_bridge  = true              # true only for SNO large stores
+ 
+[woolies.store]
+  tier             = "supermarket"     # supermarket | metro | liquor
+  state            = "NSW"
+  region           = "sydney-west"
+  store_id         = "NSW-042"
+```
+ 
+**greenboot safety net:** on every boot, greenboot runs health checks (MicroShift API server reachable, all required pods Running, disk > 10% free). If any check fails, ostree rolls back to the previous known-good image automatically — **no engineer visit required, under 5 minutes.**
+ 
+---
+ 
+## Day 0.5 — Zero-Touch Install (Kickstart)
+ 
+A store tech plugs in the hardware and walks away. Everything after that is automatic.
+ 
+```
+Power on → DHCP lease → SD-WAN ZTP fires (Cisco vManage)
+        → IPSec tunnel to DC established
+        → PXE boot → Kickstart pulls signed RHEL image
+        → CIS partitioning applied (separate /boot, /var, /home, /tmp)
+        → SELinux enforcing set at install time
+        → Ansible service account + SSH key injected
+        → /etc/woolies/node-metadata.json written
+        → greenboot health check → PASS
+        → MicroShift/SNO starts → klusterlet registers to ACM hub
+        → ArgoCD ApplicationSet detects new cluster → deploys all workloads
+        → Vault issues scoped token → ESO injects secrets per app
+        → Prometheus + Promtail start → store appears on Grafana fleet dashboard
+        ─────────────────────────────────────────────────────────────────────
+        Total: ~25 minutes from power-on to first transaction. Zero human steps.
+```
+ 
+---
+ 
+## Day 1 — Fleet Bootstrap (Ansible)
+ 
+`site-bootstrap.yml` converges every node to a consistent security and networking baseline before OpenShift is installed.
+ 
 ```bash
-1. Build the Golden Image
+# Bootstrap a new store node
+ansible-playbook site-bootstrap.yml \
+  -i inventory/hosts.ini \
+  --limit store_NSW_042 \
+  --tags "hardening,networking,k8s-prep,telemetry"
+```
+ 
+Roles applied in order:
+ 
+| Role | What it does |
+|---|---|
+| `hardening` | SELinux enforcing · SSH hardening (no root, ed25519 only) · firewall · auditd · AIDE integrity checks |
+| `networking` | Bonded NICs (LACP) · VLAN segmentation · SD-WAN integration · minimal exposed services |
+| `k8s-prep` | Kernel modules (overlay, br_netfilter) · sysctl tuning · swap disabled · pulls openshift-install |
+| `telemetry` | Dynatrace agent (existing WooliesX APM) · Prometheus node exporter · Promtail log agent |
+ 
+---
+ 
+## Day 1.5 — OpenShift MicroShift + SNO
+ 
+Store cluster definitions are declarative, reproducible, and committed to Git.
+ 
+```bash
+# Deploy MicroShift (Metro/liquor store)
+systemctl enable --now microshift
+# klusterlet auto-registers to ACM hub — no manual oc login needed
+ 
+# Deploy SNO (large supermarket — via Agent-Based Installer)
+cd 02-infrastructure/manifests/overlays/store-NSW-042
+kustomize build . | oc apply -f -
+```
+ 
+Each store overlay contains only what differs: IP, hostname, MAC, machineNetwork, store tier label. The base manifest is shared across all 3,000 stores.
+ 
+---
+ 
+## Day 2 — Workloads, Messaging and Low-Latency Design
+ 
+### RTI DDS local pub-sub bus
+ 
+Every store runs an **RTI DDS gateway** providing deterministic, low-latency pub-sub between store pods — the same middleware pattern used in the Saab 9LV Combat Management System (ship sensors → tactical displays, < 1ms). At WooliesX: POS → inventory → loyalty pods publish and subscribe locally via DDS topics. No WAN round-trip needed for intra-store operations.
+ 
+A **Bayesian outlier filter** pod subscribes to all DDS topics and quarantines anomalous events (e.g. 500% SKU spike in 60 seconds = stuck scanner) before they reach Kafka and corrupt BigQuery demand forecasts. Same principle as Bayesian noise filtering at the Bering Strait in the CCG bird-tracking project.
+ 
+### MQTT cold chain pipeline
+ 
+```
+Fridge/freezer sensor
+  → MQTT publish :1883 (every 10s)
+  → Mosquitto broker pod (local retain · Last Will Testament)
+  → cold-chain monitor pod: temp > threshold → Alertmanager → PagerDuty (< 1s, WAN-independent)
+  → Kafka → GCP Pub/Sub → Vertex AI (predictive maintenance, 48hr failure prediction)
+```
+ 
+Cold chain alerts fire **locally in under 1 second** — the WAN is not in the critical path for food safety.
+ 
+### Kafka event pipeline — POS to BigQuery
+ 
+```
+POS scan → Kafka topic (local MicroShift pod, < 10ms)
+  → Bayesian outlier filter (clean events only)
+  → SD-WAN → GCP Pub/Sub → Dataflow → BigQuery (< 2s end-to-end when WAN healthy)
+  → SAP S/4HANA OData event-driven sync (< 5s inventory update)
+ 
+If WAN drops: events queue locally, replay in order on reconnect. Zero data loss.
+```
+ 
+### Latency targets — before and after
+ 
+| Flow | Today | Proposed |
+|---|---|---|
+| POS scan → SAP inventory | minutes (batch WAN sync) | < 5 seconds (Kafka OData event-driven) |
+| Cold chain breach → alert | 60 seconds+ (polling) | < 1 second (local MQTT Alertmanager) |
+| POS scan → BigQuery | minutes (batch) | < 2 seconds (Kafka → Pub/Sub → Dataflow) |
+| Bad OS update → rollback | manual (engineer visit) | < 5 minutes (greenboot + ostree automatic) |
+| New store → trading | days (manual install) | 25 minutes (ZTP automatic) |
+ 
+### KubeVirt Windows bridge (P1–P3 only)
+ 
+During migration phases P1–P3, the Windows checkout application runs as a KubeVirt VM inside the SNO cluster. The store trades normally on Windows while the containerised replacement is developed and validated alongside it. In P4, KubeVirt is removed and the store runs fully on RHEL containers.
+ 
+```yaml
+# 03-workloads/windows-bridge/checkout-vm.yaml (excerpt)
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: checkout-windows
+  namespace: store-legacy
+  annotations:
+    woolies.migration/phase: "P1-P3"
+    woolies.migration/decommission: "P4"
+spec:
+  running: true
+  template:
+    spec:
+      domain:
+        cpu: { cores: 2 }
+        memory: { guest: 4Gi }
+      volumes:
+        - name: windows-disk
+          dataVolume: { name: checkout-app-v2 }
+```
+ 
+---
+ 
+## Day 3+ — GitOps, Secrets and Governance
+ 
+### ArgoCD App-of-Apps
+ 
+One Git commit deploys to all 3,000 stores simultaneously. ArgoCD ApplicationSet generates one Application per store from cluster labels.
+ 
+```yaml
+# 04-secrets-cicd/argo-cd/app-of-apps.yaml (excerpt)
+generators:
+  - clusters:
+      selector:
+        matchLabels:
+          woolies.store/tier: supermarket    # targets all supermarket clusters
+template:
+  spec:
+    source:
+      repoURL: https://github.com/woolies/edge-fleet
+      path: 03-workloads/overlays/{{name}}  # per-store Kustomize overlay
+```
+ 
+### Vault + External Secrets Operator
+ 
+```mermaid
+sequenceDiagram
+  actor Engineer
+  participant Git
+  participant ArgoCD
+  participant StoreCluster
+  participant ESO as External Secrets Operator
+  participant Vault
+ 
+  Engineer->>Git: Commit store Application manifest
+  Git-->>ArgoCD: Change detected
+  ArgoCD->>StoreCluster: Apply workloads + ExternalSecret objects
+  StoreCluster->>ESO: ExternalSecret for ocp-pull-secret
+  ESO->>Vault: Authenticate (Kubernetes auth · role woolies-edge-fleet)
+  Vault-->>ESO: Scoped token
+  ESO->>Vault: Read secret/woolies/store/NSW-042/pos-credentials
+  Vault-->>ESO: Secret payload
+  ESO->>StoreCluster: Create Kubernetes Secret (never touches Git)
+  StoreCluster->>Workload: Secret mounted as env/volume
+```
+ 
+---
+ 
+## Observability — 3,000 Stores on One Dashboard
+ 
+Two complementary observability layers:
+ 
+| Layer | Tool | What it covers |
+|---|---|---|
+| **App APM** | Dynatrace (existing WooliesX) | Application performance, transactions, distributed tracing |
+| **Infra fleet** | Prometheus → Thanos → Loki → Grafana | OS metrics, pod health, CIS compliance state, SD-WAN status per store |
+ 
+The infra fleet pipeline is three-tiered:
+ 
+```
+Store edge:    Prometheus scrapes pods + RHEL OS  →  Promtail ships logs
+                    ↓ remote_write                      ↓ Loki ship
+Regional hub:  Thanos Receive (aggregates ~500 stores)  Loki aggregator
+                    ↓ federated                         ↓ forwarded
+Central hub:   Thanos Query (single PromQL across all 3,000 stores)
+               Loki central  ·  Grafana fleet dashboard (green/amber/red per store)
+```
+ 
+One PromQL query — `count(up{job="pos"} == 0)` — shows how many POS containers are down across the entire fleet right now.
+ 
+---
+ 
+## MCP AI Agents — Platform Intelligence
+ 
+MCP agents run on the central hub and evolve from reactive (Phase 2) to proactive (Phase 4).
+ 
+| Phase | Capability | What the agent does |
+|---|---|---|
+| **Phase 2+** | Detect + rollback | Watches Thanos — on anomaly triggers ArgoCD rollback |
+| **Phase 2+** | Wave gate control | Pauses canary rollout automatically if error rate spikes |
+| **Phase 2+** | Policy remediation | ACM enforce mode — pushes correct config back to drifted store |
+| **Phase 4** | Auto-harden on ZTP | CIS scan on every new store boot → Ansible fix → compliant before first transaction |
+| **Phase 4** | SELinux pre-emption | Watches audit.log patterns — fixes policy before pod is blocked |
+| **Phase 4** | CVE auto-patch | CVE feed → Image Builder blueprint PR → human approves → MCP merges |
+| **Phase 4** | Predictive failure | Thanos anomaly detection → alert 48hr before store node fails |
+| **Phase 4** | Rollout optimiser | Schedules canary waves by store load, time-of-day, historical error rate |
+ 
+---
+ 
+## Security and Compliance
+ 
+| Control | Implementation |
+|---|---|
+| ✅ Immutable OS | RHEL image mode (ostree) — every store boots identical signed image |
+| ✅ Automatic rollback | greenboot health checks + ostree — bad image rolled back in < 5 min, no engineer visit |
+| ✅ SELinux enforcing | Applied at image build time. Workloads run under restricted SCC. `audit2allow` for exceptions only — never `setenforce 0` |
+| ✅ CIS RHEL 9 Level 2 | Enforced via RHEL Image Builder + Ansible hardening role. OpenSCAP scan in CI |
+| ✅ Zero secrets in Git | All credentials fetched from Vault via External Secrets Operator at runtime |
+| ✅ Least-privilege Vault | Per-store, per-team Vault policies. `woolies-edge-fleet` role scoped to store namespace |
+| ✅ Network segmentation | Bonded NICs, VLANs, SD-WAN. Minimal exposed services. Port 6443 (OCP API) and 443 only |
+| ✅ Disconnected-safe | Internal mirror registry `registry.woolies.internal:5000`. Stores operate with no direct internet |
+| ✅ Image provenance | TOML blueprint + Packer manifest + CI logs. `/etc/woolies/image.toml` stamped on every node |
+| ✅ Pipeline compliance gates | CIS scan, OpenSCAP, container image scan on every PR to `main` |
+ 
+---
+ 
+## Architecture Decision Records
+ 
+| ADR | Decision | Summary |
+|---|---|---|
+| [ADR-001](docs/adrs/ADR-001-sno-vs-microshift.md) | SNO at large stores, MicroShift at Metro/liquor | SNO required for KubeVirt Windows bridge (OpenShift Virtualization). MicroShift for resource-constrained stores. Same ACM/ArgoCD pipeline for both. |
+| [ADR-002](docs/adrs/ADR-002-kubevirt-windows-bridge.md) | KubeVirt as Windows bridge during P1–P3 | Enables parallel run without store downtime. Windows decommissioned in P4 when app is fully containerised. |
+| [ADR-003](docs/adrs/ADR-003-vault-vs-sealed-secrets.md) | Vault + ESO over Sealed Secrets / SOPS | Centralised secret lifecycle management, per-store scoping, audit trail, dynamic secrets for future use. |
+ 
+---
+ 
+## Quick Start — Zero-Touch Path (new store)
+ 
+```bash
+# 1. Register hardware (only manual step — done before hardware ships)
+cmdb-cli register \
+  --mac 08:00:27:ab:cd:ef \
+  --store-id NSW-042 \
+  --tier supermarket \
+  --state NSW
+ 
+# 2. Power on hardware — everything below happens automatically:
+#    SD-WAN ZTP fires → IPSec tunnel → PXE boot → Kickstart
+#    RHEL image deployed → MicroShift starts → klusterlet registers
+#    ArgoCD deploys all workloads → Vault injects secrets
+#    Prometheus + Promtail start → store appears on Grafana
+#    Total: ~25 minutes from power-on to first transaction
+ 
+# ── Day 2 operations (platform team only) ──────────────────────
+ 
+# Build golden image (CI runs this automatically on PR merge to main)
 cd 00-provisioning/packer
 packer init .
 packer build -var-file=vars/store-prod.pkrvars.hcl rhel9-edge.pkr.hcl
-
-2. Bootstrap a new store node
+ 
+# Bootstrap a store node manually (fallback / lab use)
 cd 01-bootstrap
-ansible-playbook site-bootstrap.yml -i inventory/hosts.ini --limit store_001
-
-3. Deploy OpenShift SNO for that store
-cd 02-infrastructure/manifests/overlays/store-001
+ansible-playbook site-bootstrap.yml \
+  -i inventory/hosts.ini \
+  --limit store_NSW_042
+ 
+# Deploy SNO for a large supermarket (Agent-Based Installer)
+cd 02-infrastructure/manifests/overlays/store-NSW-042
 kustomize build . | oc apply -f -
-
-4. Bring workloads under GitOps control
-cd 04-secrets-cicd/argo-cd
-kubectl apply -f project-woolies-edge-fleet.yaml   # once per hub
-kubectl apply -f app-of-apps.yaml
+ 
+# Bring workloads under GitOps (once per fleet — then ArgoCD manages everything)
+kubectl apply -f 04-secrets-cicd/argo-cd/project-woolies-edge-fleet.yaml
+kubectl apply -f 04-secrets-cicd/argo-cd/app-of-apps.yaml
 ```
-
+ 
 ---
-
-## Security & Compliance 🔒
-
-- ✅ CIS RHEL 9 Level 2 enforced via Packer + Ansible.
-- ✅ SELinux `Enforcing` on all nodes; workloads expected to run with restricted SCC.
-- ✅ Secrets never stored in Git – fetched from Vault via External Secrets Operator.
-- ✅ Store networks segmented (bonded NICs, VLANs, SD-WAN), with minimal exposed services.
-- ✅ Image provenance tracked (TOML manifest + Packer manifest + CI logs).
-
+ 
+## What to Add Next — Roadmap
+ 
+The following are not yet in the repo and would make it production-grade:
+ 
+| Item | Directory | Why it matters |
+|---|---|---|
+| Real `image.toml` blueprint | `00-provisioning/image-builder/` | David will ask to see it. Include CIS partitions, greenboot, MicroShift RPM list |
+| `store-default.ks` Kickstart | `00-provisioning/kickstart/` | The ZTP proof — shows disk layout, SELinux, node-metadata.json write |
+| Ansible CIS hardening role | `01-bootstrap/roles/hardening/` | Most interviewers ask "show me your hardening automation" |
+| MicroShift `config.yaml` | `02-infrastructure/microshift/` | Shows you know MicroShift-specific config (cluster network, service network, LVMS) |
+| `dds-gateway` ConfigMap | `03-workloads/dds-gateway/` | Concrete DDS domain bridge config — your differentiator |
+| Bayesian outlier filter | `03-workloads/dds-gateway/` | Python pod reading Kafka, flagging anomalies — shows the CCG story is real |
+| Grafana fleet dashboard JSON | `03-workloads/observability/` | A real dashboard definition with store green/amber/red panels |
+| MCP rollout controller | `03-workloads/platform-ai/` | Even a stub showing the Thanos query → ArgoCD rollback trigger logic |
+| Full ADR documents | `docs/adrs/` | ADR-001 through ADR-003 with rationale, options considered, decision |
+| `05-migration/wave-config/` | `05-migration/` | Canary wave definition: 50 stores/week, health gate thresholds, pause conditions |
+ 
 ---
-
-## Contributing 🤝
-
-See `CONTRIBUTING.md` for branching and PR guidelines.  
-High‑level:
-
-- Use **Conventional Commits** (e.g. `feat:`, `fix:`, `docs:`).  
-- Run `pre-commit` locally (YAML + Ansible lint) before pushing.  
-- All changes to `04-secrets-cicd/` require security review.
-
-1. Create a feature branch from `main`.
-2. Ensure `pre-commit` passes locally.
-3. Raise a PR with:
-   - Link to Jira ticket (e.g. EDGEPLT-123)
-   - Impacted layers (Day 0, Day 1, etc.)
-1. At least one approval from platform team is required.
-
-### All files require platform team review
-*           @woolies/platform-team
-
-### Security sensitive
-04-secrets-cicd/*   @woolies/security-team
-
-### Migration runbooks
-migration/*         @woolies/platform-team @woolies/store-ops
-
+ 
+## Branching and Contributing
+ 
+```
+main            ← production-ready · protected · requires platform-team approval
+├── feature/*   ← new capabilities
+├── fix/*        ← bug fixes
+└── migration/* ← phase runbooks · requires platform-team + store-ops approval
+```
+ 
+Conventional Commits enforced: `feat:`, `fix:`, `docs:`, `chore:`, `security:`.
+Run `pre-commit` (YAML lint + Ansible lint + OpenSCAP) before pushing.
+ 
+### Code ownership
+ 
+```
+# All files — platform team review required
+*                         @woolies/platform-team
+ 
+# Security-sensitive — security team co-review
+04-secrets-cicd/*         @woolies/security-team
+00-provisioning/*/        @woolies/security-team
+ 
+# Migration runbooks — store ops co-review
+05-migration/*            @woolies/platform-team @woolies/store-ops
+```
+ 
 ---
-## Security Policy
-
-- Secrets must never be committed to Git.
-- All credentials are stored in HashiCorp Vault and consumed via External Secrets Operator.
-- Changes to `04-secrets-cicd/*` require security team review.
-- SELinux is enforced on all nodes; workloads are expected to run under restricted SCC.
-- All OpenShift and workload images are pulled from an **internal mirror
-  registry** (`registry.woolies.internal:5000`), configured via
-  `imageContentSources` and mirrored with `oc adm release mirror`.
-  Stores can run in disconnected mode with no direct internet access.
-- ---
-### Architecture decisions
-
-- ADR-001: Why SNO over MicroShift at edge.
-- ADR-002: Why KubeVirt as Windows bridge during migration.
-- ADR-003: Why External Secrets + Vault over Sealed Secrets/SOPS.
-- ---
-
-*Maintained by the Edge Platform Engineering team (reference design). In a real Woolies deployment, this would be adapted to existing tooling, networks, and governance.*  
+ 
+## Author
+ 
+**Nireekshan Sodavaram** — PhD Computer Science · NV1 Security Cleared  
+Lead Systems & Edge Infrastructure Engineer  
+[nik.sodavaram@outlook.com](mailto:nik.sodavaram@outlook.com) · [github.com/niksodavaram](https://github.com/niksodavaram)
+ 
+*Reference design for WooliesX Edge Infra Linux Engineer interview — 7 April 2025*
+*All technology references based solely on publicly available information.*
