@@ -20,6 +20,17 @@ metadata:
   annotations:
     woolies.platform/description: "MCP agent — canary wave gate controller"
     woolies.platform/phase: "Phase 2+"
+    woolies.platform/design-pattern: |
+    OODA Loop — from Saab 9LV Combat Management System (2024-25).
+    Observe:  Thanos PromQL scrapes fleet metrics every 60s
+    Orient:   anomaly detection compares against wave baseline
+    Decide:   threshold check (5% pause, 15% rollback)
+    Act:      ArgoCD sync / rollback triggered automatically
+    
+    The warship version ran in milliseconds for tactical decisions.
+    The retail version runs on a 60s loop — the stakes are lower
+    but the principle is identical: detect early, act decisively,
+    never let a bad state propagate across the fleet.
 spec:
   replicas: 1
   selector:

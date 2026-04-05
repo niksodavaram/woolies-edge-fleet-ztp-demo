@@ -10,6 +10,15 @@
 # 5. If error threshold breached: wave paused or rolled back
 # 6. Windows VM decommissioned per store after 48hr clean run
 
+# Blackout windows — no rollouts during trading hours
+#
+# Lesson from Energy Australia CDR (2022): we ran shadow mode
+# for 3 weeks before the ACCC go-live because the cost of a
+# failed deployment during peak API load was a compliance breach,
+# not just downtime. Same logic here — a failed rollout at 2pm
+# Saturday affects real transactions, real customers, real revenue.
+# We deploy at 2am. We validate at 3am. Stores open at 7am green.
+
 apiVersion: v1
 kind: ConfigMap
 metadata:

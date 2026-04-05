@@ -96,7 +96,20 @@ All other stores → **MicroShift**.
 - SNO image is larger (~120 GB) vs MicroShift (~10 GB) — Image Builder handles this per tier
 
 ---
+## Why not Rancher instead of ACM?
 
+At NAB (2023-24) I managed 600 branch edge devices via Rancher.
+Rancher and ACM are the same hub+spoke model — but Rancher lacks
+a GitOps-native policy engine. Drift at NAB meant running Ansible
+on a cron schedule and hoping. ACM enforce mode is event-driven:
+the moment a store deviates from the ConfigurationPolicy, it is
+remediated — no cron, no lag, no missed nodes.
+
+The specific failure mode I am designing against: a Rancher-managed
+branch at NAB went out of CIS compliance after a manual change by
+a local IT contractor. We did not detect it for 11 days. In a
+PCI-DSS environment that is an audit finding. ACM enforce mode
+makes that failure mode structurally impossible.
 ## Review date
 
 April 2026 — review if MicroShift adds OpenShift Virtualization support (tracking: USHIFT-4521).

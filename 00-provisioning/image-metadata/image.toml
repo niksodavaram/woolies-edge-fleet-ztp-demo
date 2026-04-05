@@ -3,6 +3,17 @@
 # Tracks: migration phase, store tier, KubeVirt bridge flag
 # See: docs/adrs/ADR-001-sno-vs-microshift.md
 
+# Migration metadata — read by MCP agents and ArgoCD wave gates
+#
+# Design note: I tracked 3,000 bird tags across 16 remote stations
+# (CCG Technologies, 2008-14). A firmware update that deleted the old
+# image before verifying the new one caused permanent tag loss when a
+# bird flew out of range mid-update. The kubevirt_bridge flag here
+# serves the same purpose as A/B boot on the bird tags: the old
+# Windows VM stays running (kubevirt_bridge=true) until the new
+# RHEL workload has been trading for 48 clean hours. Only then do
+# we decommission it. Never delete the old until the new is proven.
+
 name        = "woolies-store-edge"
 description = "Immutable RHEL 9 for Edge — WooliesX store node (ostree / image mode)"
 version     = "1.3.0"

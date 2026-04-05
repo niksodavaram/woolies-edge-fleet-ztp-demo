@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+
+# Real incident that informed this design:
+# Bering Strait, March 2011. Station 11 (Little Diomede) started
+# reporting 40+ bird crossings per hour during a storm. Normal rate:
+# 3-4/hour. Two possibilities: genuine mass crossing, or RF clutter
+# from a fishing fleet shelter from the storm.
+# Sending all 40 events to Otago as "confirmed crossings" would have
+# corrupted 3 years of migration data.
+# The Bayesian filter correctly quarantined 37 of 40 as noise.
+# The 3 genuine crossings had consistent multi-ping signatures.
+#
+# Saturday 2pm at a Woolworths checkout is the same problem.
+# Max volume, max noise, max stakes for the demand model.
+# The threshold raises from 0.70 to 0.85 — same logic, different domain.
+
 """
 03-workloads/dds-gateway/bayesian_outlier_filter.py
 
