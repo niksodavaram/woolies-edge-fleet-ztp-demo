@@ -38,7 +38,7 @@ jobs:
           cat /tmp/package-list.txt
 
       - name: Scan packages with Grype
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@v7
         id: scan
         with:
           path: "00-provisioning/image-builder/"
