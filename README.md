@@ -124,6 +124,102 @@ woolies-edge-fleet-ztp/
 
 ---
 
+### Sequence diagram for GitOps sync and Vault-backed secret injection
+
+```mermaid
+sequenceDiagram
+  actor PlatformEngineer
+  participant GitRepo as Git_Repo
+  participant ArgoCD as ArgoCD_Root_App
+  participant StoreCluster as Store_SNO_Cluster
+  participant ESO as External_Secrets_Operator
+  participant Vault as HashiCorp_Vault
+  participant Workload as Scan_Assist_AI_Pod
+
+  PlatformEngineer->>GitRepo: Commit ArgoCD store Application
+  GitRepo-->>ArgoCD: Repo change detected (poll/webhook)
+  ArgoCD->>ArgoCD: Reconcile woolies-fleet-root app-of-apps
+  ArgoCD->>StoreCluster: Create/Update child Application (store-001-bondi)
+  ArgoCD->>StoreCluster: Apply manifests (workloads, ESO, ExternalSecrets)
+
+  StoreCluster->>ESO: ExternalSecret for ocp-pull-secret created
+  ESO->>Vault: Authenticate via Kubernetes auth (role woolies-edge-fleet)
+  Vault-->>ESO: Auth token
+  ESO->>Vault: Read secret data at secret/woolies/ocp/pull-secret
+  Vault-->>ESO: Secret payload (.dockerconfigjson)
+  ESO->>StoreCluster: Create Kubernetes Secret ocp-pull-secret
+
+  ArgoCD->>StoreCluster: Ensure workloads (scan-assist-ai, dynatrace, etc.) are Synced/Healthy
+  StoreCluster->>Workload: Mount injected Secret as env/volume
+  Workload-->>PlatformEngineer: Application running with Vault-backed secrets
+```
+---
+
+### Migration Phases (Mermaid State Diagram)
+
+```javascript
+stateDiagram-v2
+  [*] --> P0
+
+  state P0 {
+    [*] --> Foundation
+    Foundation: Golden_Image_built_and_validated
+    Foundation --> [*]
+  }
+
+  state P1 {
+    [*] --> Pilot_ZTP
+    Pilot_ZTP: 5_pilot_stores
+    Pilot_ZTP --> [*]
+  }
+
+  state P2 {
+    [*] --> Fleet_Bootstrap
+    Fleet_Bootstrap: 100_stores_bootstrapped
+    Fleet_Bootstrap --> [*]
+  }
+
+  state P3 {
+    [*] --> Full_GitOps
+    Full_GitOps: 1000_stores_under_ArgoCD
+    Full_GitOps --> [*]
+  }
+
+  state P4 {
+    [*] --> Decommission
+    Decommission: VMware_Windows_retired
+    Decommission --> [*]
+  }
+
+  note right of Pilot_ZTP
+    Kickstart_ZTP
+    SNO_installed
+    Windows-co-existence
+  end note
+
+  note right of Fleet_Bootstrap
+    Windows_VMs_on_KubeVirt
+  end note
+
+  note right of Full_GitOps
+    Vault_secrets
+    full_observability
+  end note
+
+  note right of Decommission
+    KubeVirt_bridge_removed
+  end note
+
+  P0 --> P1: migration.current=P1
+  P1 --> P2: migration.current=P2
+  P2 --> P3: migration.current=P3
+  P3 --> P4: migration.current=P4
+
+  P1 --> P0: Rollback
+  P2 --> P1: Rollback
+  P3 --> P2: Rollback
+  P4 --> P3: Rollback
+```
 ## Day 0 → Day 4 Flow (Principal View) 🧠
 
 ### Day 0 – Golden Image (Packer + TOML)
