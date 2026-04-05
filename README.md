@@ -553,25 +553,6 @@ kubectl apply -f 04-secrets-cicd/argo-cd/app-of-apps.yaml
  
 ---
  
-## What to Add Next — Roadmap
- 
-The following are not yet in the repo and would make it production-grade:
- 
-| Item | Directory | Why it matters |
-|---|---|---|
-| Real `image.toml` blueprint | `00-provisioning/image-builder/` | David will ask to see it. Include CIS partitions, greenboot, MicroShift RPM list |
-| `store-default.ks` Kickstart | `00-provisioning/kickstart/` | The ZTP proof — shows disk layout, SELinux, node-metadata.json write |
-| Ansible CIS hardening role | `01-bootstrap/roles/hardening/` | Most interviewers ask "show me your hardening automation" |
-| MicroShift `config.yaml` | `02-infrastructure/microshift/` | Shows you know MicroShift-specific config (cluster network, service network, LVMS) |
-| `dds-gateway` ConfigMap | `03-workloads/dds-gateway/` | Concrete DDS domain bridge config — your differentiator |
-| Bayesian outlier filter | `03-workloads/dds-gateway/` | Python pod reading Kafka, flagging anomalies — shows the CCG story is real |
-| Grafana fleet dashboard JSON | `03-workloads/observability/` | A real dashboard definition with store green/amber/red panels |
-| MCP rollout controller | `03-workloads/platform-ai/` | Even a stub showing the Thanos query → ArgoCD rollback trigger logic |
-| Full ADR documents | `docs/adrs/` | ADR-001 through ADR-003 with rationale, options considered, decision |
-| `05-migration/wave-config/` | `05-migration/` | Canary wave definition: 50 stores/week, health gate thresholds, pause conditions |
- 
----
- 
 ## Branching and Contributing
  
 ```

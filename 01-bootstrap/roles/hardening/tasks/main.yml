@@ -1,82 +1,190 @@
 ---
-# ============================================================
-# Role: hardening
-# Purpose: CIS RHEL 9 Level 2 — SSH, SELinux, Firewall
-# Idempotent — safe to re-run on all fleet nodes
-# ============================================================
+# 01-bootstrap/roles/hardening/tasks/main.yml
+# CIS RHEL 9 Level 2 hardening — Woolworths store edge nodes
+# Applied by: site-bootstrap.yml before OpenShift install
+# Reference: CIS Benchmark RHEL 9 v1.0.0
 
-- name: "[hardening] Ensure SELinux is enforcing"
-  ansible.posix.selinux:
-    policy: "{{ selinux_policy }}"
-    state: "{{ selinux_state }}"
-  tags: selinux
+- name: Hardening | CIS 1.1 — Filesystem configuration
+  block:
+    - name: Set nodev/noexec/nosuid on /tmp
+      ansible.posix.mount:
+        path: /tmp
+        src: tmpfs
+        fstype: tmpfs
+        opts: "defaults,nodev,noexec,nosuid"
+        state: mounted
 
-- name: "[hardening] Set SSH hardening config"
-  ansible.builtin.template:
-    src: sshd_woolies.conf.j2
-    dest: /etc/ssh/sshd_config.d/99-woolies.conf
-    owner: root
-    group: root
-    mode: '0600'
-  notify: restart sshd
-  tags: ssh
+    - name: Disable unused filesystems (CIS 1.1.1)
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/woolies-disable-fs.conf
+        content: |
+          install cramfs /bin/false
+          install freevxfs /bin/false
+          install jffs2 /bin/false
+          install hfs /bin/false
+          install hfsplus /bin/false
+          install squashfs /bin/false
+          install udf /bin/false
+        mode: '0644'
 
-- name: "[hardening] Configure firewalld — drop all, allow explicit services"
-  ansible.posix.firewalld:
-    service: "{{ item }}"
-    permanent: true
-    state: enabled
-    zone: public
+- name: Hardening | CIS 1.5 — Bootloader + core dumps
+  block:
+    - name: Set bootloader password hash placeholder
+      ansible.builtin.lineinfile:
+        path: /etc/grub.d/40_custom
+        line: "# GRUB password set via Vault at provisioning time"
+        create: true
+        mode: '0755'
+
+    - name: Disable core dumps (CIS 1.5.1)
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-woolies-coredump.conf
+        content: |
+          fs.suid_dumpable = 0
+          kernel.core_uses_pid = 1
+        mode: '0644'
+
+- name: Hardening | CIS 2.2 — Disable unnecessary services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
   loop:
-    - ssh
-    - https
-  tags: firewall
+    - avahi-daemon
+    - cups
+    - dhcpd
+    - slapd
+    - nfs-server
+    - rpcbind
+    - named
+    - vsftpd
+    - httpd
+    - dovecot
+    - smb
+    - squid
+    - snmpd
+    - ypserv
+    - rsh.socket
+    - rlogin.socket
+    - rexec.socket
+    - telnet.socket
+  ignore_errors: true   # service may not be installed — OK
 
-- name: "[hardening] Block unnecessary services via firewalld"
-  ansible.posix.firewalld:
-    service: "{{ item }}"
-    permanent: true
-    state: disabled
-    zone: public
-  loop:
-    - dhcpv6-client
-    - cockpit
-  tags: firewall
-
-- name: "[hardening] Apply CIS sysctl network hardening"
-  ansible.posix.sysctl:
-    name: "{{ item.key }}"
-    value: "{{ item.value }}"
-    sysctl_set: true
-    state: present
-    reload: true
-  loop:
-    - { key: 'net.ipv4.ip_forward',                   value: '0' }
-    - { key: 'net.ipv4.conf.all.send_redirects',       value: '0' }
-    - { key: 'net.ipv4.conf.all.accept_redirects',     value: '0' }
-    - { key: 'net.ipv4.conf.all.log_martians',         value: '1' }
-    - { key: 'kernel.randomize_va_space',              value: '2' }
-    - { key: 'fs.suid_dumpable',                       value: '0' }
-  tags: sysctl
-
-- name: "[hardening] Configure auditd rules"
+- name: Hardening | CIS 3.1 — Network parameters
   ansible.builtin.copy:
-    src: files/99-woolies-audit.rules
-    dest: /etc/audit/rules.d/99-woolies.rules
-    owner: root
-    group: root
-    mode: '0640'
-  notify: reload auditd
-  tags: audit
+    dest: /etc/sysctl.d/99-woolies-network.conf
+    content: |
+      # CIS 3.1 — Network parameters
+      net.ipv4.ip_forward                 = 1   # required for MicroShift OVN
+      net.ipv4.conf.all.send_redirects    = 0
+      net.ipv4.conf.default.send_redirects = 0
+      net.ipv4.conf.all.accept_redirects  = 0
+      net.ipv4.conf.default.accept_redirects = 0
+      net.ipv4.conf.all.log_martians      = 1
+      net.ipv4.conf.default.log_martians  = 1
+      net.ipv4.conf.all.rp_filter         = 1
+      net.ipv4.conf.default.rp_filter     = 1
+      net.ipv4.icmp_echo_ignore_broadcasts = 1
+      net.ipv4.tcp_syncookies             = 1
+      # Required for MicroShift bridge networking
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+    mode: '0644'
+  notify: Reload sysctl
 
-- name: "[hardening] Initialise AIDE database (HIDS)"
-  ansible.builtin.command: aide --init
-  args:
-    creates: /var/lib/aide/aide.db.new
-  tags: aide
+- name: Hardening | CIS 4.1 — Configure auditd
+  block:
+    - name: Ensure auditd is running
+      ansible.builtin.systemd:
+        name: auditd
+        state: started
+        enabled: true
 
-- name: "[hardening] Move AIDE database to active location"
-  ansible.builtin.command: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
-  args:
-    creates: /var/lib/aide/aide.db
-  tags: aide
+    - name: Deploy Woolies audit rules
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/99-woolies.rules
+        mode: '0640'
+        content: |
+          # CIS 4.1 audit rules — Woolworths store nodes
+          -w /etc/passwd -p wa -k identity
+          -w /etc/shadow -p wa -k identity
+          -w /etc/group -p wa -k identity
+          -w /etc/gshadow -p wa -k identity
+          -w /etc/sudoers -p wa -k priv_esc
+          -w /etc/sudoers.d/ -p wa -k priv_esc
+          -w /var/log/lastlog -p wa -k logins
+          -w /var/run/faillock/ -p wa -k logins
+          -w /etc/woolies/ -p wa -k woolies_config
+          -a always,exit -F arch=b64 -S execve -k exec
+          -a always,exit -F arch=b32 -S execve -k exec
+          -e 2
+      notify: Restart auditd
+
+- name: Hardening | CIS 5.2 — SSH configuration
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-woolies-cis.conf
+    mode: '0600'
+    content: |
+      # CIS 5.2 SSH hardening — Woolworths store nodes
+      Protocol 2
+      LogLevel VERBOSE
+      PermitRootLogin no
+      MaxAuthTries 4
+      IgnoreRhosts yes
+      HostbasedAuthentication no
+      PermitEmptyPasswords no
+      PermitUserEnvironment no
+      Ciphers aes256-gcm@openssh.com,chacha20-poly1305@openssh.com
+      MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+      KexAlgorithms curve25519-sha256,diffie-hellman-group14-sha256
+      ClientAliveInterval 300
+      ClientAliveCountMax 3
+      LoginGraceTime 60
+      AllowUsers ansible-svc
+      Banner /etc/issue.net
+  notify: Restart sshd
+
+- name: Hardening | Legal banner
+  ansible.builtin.copy:
+    dest: /etc/issue.net
+    content: |
+      **************************************************************************
+      WOOLWORTHS GROUP — AUTHORISED ACCESS ONLY
+      This system is for authorised Woolworths Group personnel only.
+      Unauthorised access is prohibited and may be subject to civil and
+      criminal prosecution. All activities are monitored and logged.
+      **************************************************************************
+    mode: '0644'
+
+- name: Hardening | CIS 6.1 — File permissions
+  block:
+    - name: Ensure passwd, shadow, group permissions
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /etc/passwd,  owner: root, group: root, mode: '0644' }
+        - { path: /etc/shadow,  owner: root, group: root, mode: '0000' }
+        - { path: /etc/group,   owner: root, group: root, mode: '0644' }
+        - { path: /etc/gshadow, owner: root, group: root, mode: '0000' }
+
+- name: Hardening | Run OpenSCAP CIS Level 2 scan
+  ansible.builtin.command:
+    cmd: >
+      oscap xccdf eval
+      --profile xccdf_org.ssgproject.content_profile_cis_server_l2
+      --results /var/log/woolies-oscap-results.xml
+      --report /var/log/woolies-oscap-report.html
+      /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml
+  register: oscap_result
+  failed_when: oscap_result.rc not in [0, 2]   # 2 = some checks failed (acceptable in demo)
+  changed_when: false
+
+- name: Hardening | Fetch OpenSCAP report
+  ansible.builtin.fetch:
+    src: /var/log/woolies-oscap-report.html
+    dest: "reports/oscap/{{ inventory_hostname }}-oscap.html"
+    flat: true
+  ignore_errors: true

@@ -1,0 +1,141 @@
+---
+# 05-migration/wave-config/wave-definition.yaml
+# Canary wave rollout configuration — WooliesX edge fleet migration
+#
+# How it works:
+# 1. MCP rollout-controller reads this config every 60 seconds
+# 2. Pre-wave health gates checked against Thanos metrics
+# 3. 50 stores per wave, ArgoCD RollingSync deploys
+# 4. In-wave health gates monitored continuously
+# 5. If error threshold breached: wave paused or rolled back
+# 6. Windows VM decommissioned per store after 48hr clean run
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wave-rollout-config
+  namespace: platform-ai
+  labels:
+    woolies.platform/component: rollout-controller
+data:
+  waves.yaml: |
+
+    # ── Global settings ──────────────────────────────────────────────────────
+    global:
+      wave_size: 50                  # stores per wave
+      wave_interval_hours: 24        # minimum 24hr between waves
+      target_total_stores: 3000      # AU + NZ
+      estimated_completion_weeks: 60 # 3000 / 50 = 60 waves = ~14 months
+
+      # Windows VM decommission — only after clean run
+      windows_decommission:
+        clean_run_hours: 48          # must trade clean on RHEL for 48hr first
+        validation_checks:
+          - pos_error_rate < 0.01
+          - kafka_consumer_lag < 1000
+          - cold_chain_alerts == 0
+          - acm_policy_compliant == true
+
+      # Rollout blackout windows (AEST) — no deployments during trading hours
+      blackout_windows:
+        - label: "Trading hours weekday"
+          cron: "0 7-21 * * 1-5"
+        - label: "Trading hours weekend"
+          cron: "0 8-20 * * 6,0"
+        - label: "Christmas Eve"
+          date: "2025-12-24"
+        - label: "Boxing Day"
+          date: "2025-12-26"
+
+    # ── Pre-wave health gates ─────────────────────────────────────────────────
+    # All must PASS before a wave starts. Checked via Thanos PromQL.
+    pre_wave_gates:
+      - name: pos_availability
+        description: "POS pods must be healthy across current fleet"
+        query: 'avg(up{job="store-pos"}) > 0.99'
+        action: pause
+        message: "POS availability below 99% — delaying wave start"
+
+      - name: kafka_lag
+        description: "Event stream must not be lagging"
+        query: 'max(kafka_consumer_group_lag{topic="woolies.store.events"}) < 5000'
+        action: pause
+        message: "Kafka consumer lag too high — stores may be under stress"
+
+      - name: acm_compliance
+        description: "Fleet compliance must be high before expanding rollout"
+        query: 'sum(acm_policy_compliant) / sum(acm_policy_total) > 0.95'
+        action: pause
+        message: "ACM compliance below 95% — fix drift before proceeding"
+
+      - name: greenboot_failures
+        description: "No recent greenboot failures in current fleet"
+        query: 'sum(increase(greenboot_failure_total[1h])) == 0'
+        action: pause
+        message: "greenboot failures detected in last hour — investigate before wave"
+
+    # ── In-wave health gates ──────────────────────────────────────────────────
+    # Evaluated every 60s during active wave. Breach triggers pause or rollback.
+    in_wave_gates:
+      - name: error_rate_pause
+        query: 'rate(pos_transaction_errors_total[5m]) / rate(pos_transactions_total[5m]) > 0.05'
+        threshold_duration_seconds: 120   # must breach for 2 min before acting
+        action: pause_wave
+        message: "POS error rate >5% — pausing wave, investigating"
+
+      - name: error_rate_rollback
+        query: 'rate(pos_transaction_errors_total[5m]) / rate(pos_transactions_total[5m]) > 0.15'
+        threshold_duration_seconds: 60
+        action: rollback_wave             # triggers ostree rollback on wave stores
+        message: "POS error rate >15% — rolling back entire wave"
+
+      - name: greenboot_failures_in_wave
+        query: 'sum(increase(greenboot_failure_total{store_id=~"wave-current"}[10m])) > 3'
+        threshold_duration_seconds: 0     # immediate
+        action: pause_wave
+        message: "Multiple greenboot failures in wave — pausing"
+
+      - name: kafka_queue_overflow
+        query: 'max(kafka_consumer_group_lag{topic="woolies.store.events",store_id=~"wave-current"}) > 10000'
+        threshold_duration_seconds: 300
+        action: pause_wave
+        message: "Kafka lag overflow in wave stores — stores may be struggling"
+
+    # ── Wave schedule (Phase 3 — months 3-6) ────────────────────────────────
+    # Priority order: largest stores first (more impact if successful)
+    # Then by state: NSW/VIC/QLD first (largest store count)
+    wave_schedule:
+      - wave: 1
+        label: "NSW pilot supermarkets"
+        selector:
+          state: NSW
+          tier: supermarket
+          count: 50
+        starts_after: "P2 validation complete"
+
+      - wave: 2
+        label: "VIC pilot supermarkets"
+        selector:
+          state: VIC
+          tier: supermarket
+          count: 50
+        starts_after: "wave-1 clean for 48hr"
+
+      - wave: 3
+        label: "QLD pilot supermarkets"
+        selector:
+          state: QLD
+          tier: supermarket
+          count: 50
+        starts_after: "wave-2 clean for 48hr"
+
+      # Waves 4–10: remaining supermarkets AU
+      # Waves 11–30: Metro stores AU
+      # Waves 31–40: Liquor stores AU
+      # Waves 41–60: NZ stores (all tiers)
+      - wave: "4-60"
+        label: "Remaining fleet — see rollout-controller for dynamic scheduling"
+        selector:
+          auto: true          # MCP rollout-controller assigns stores dynamically
+          exclude_blackout: true
+          prioritise_low_risk: true   # stores with stable Thanos history go first

@@ -1,0 +1,132 @@
+---
+# 03-workloads/dds-gateway/configmap.yaml
+# RTI DDS ↔ MQTT/Kafka bridge — Woolworths store edge node
+#
+# This is the low-latency backbone of the store:
+# POS, inventory, loyalty and cold-chain pods publish/subscribe via DDS topics.
+# The gateway bridges DDS domain → MQTT (cold chain IoT) and Kafka (event bus to cloud).
+#
+# Pattern from: Saab 9LV Combat Management System (ship sensors → tactical displays)
+# and Macquarie University healthcare COP (patient IoT → Common Operating Picture).
+# Both used RTI DDS for deterministic, < 1ms intra-node pub-sub.
+#
+# Latency targets:
+#   DDS intra-node (pod to pod):  < 1ms
+#   DDS → MQTT (cold chain):      < 100ms
+#   DDS → Kafka (POS events):     < 10ms
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dds-gateway-config
+  namespace: store-platform
+  labels:
+    app.kubernetes.io/name: dds-gateway
+    app.kubernetes.io/component: messaging
+    woolies.store/tier: "{{ woolies_store_tier }}"
+data:
+  gateway.yaml: |
+    # RTI Connext DDS Gateway configuration
+    # Domain 0 = intra-store (POS ↔ inventory ↔ loyalty ↔ cold-chain)
+    # Domain 1 = external (Kafka bridge to cloud)
+
+    dds:
+      domain_id: 0
+      participant_name: "woolies-store-gateway"
+      qos_profile: "BuiltinQosLib::Generic.StrictReliable"
+
+      topics:
+        # POS transaction events (publisher: pos pod, subscribers: inventory, loyalty)
+        - name: "pos/transaction"
+          type: "WooliesPOSTransaction"
+          direction: publish_subscribe
+          qos:
+            reliability: RELIABLE
+            durability: TRANSIENT_LOCAL
+            history: KEEP_LAST
+            history_depth: 1000
+
+        # Inventory updates (publisher: inventory pod, subscriber: Kafka bridge)
+        - name: "inventory/update"
+          type: "WooliesInventoryUpdate"
+          direction: publish_subscribe
+          qos:
+            reliability: RELIABLE
+            durability: VOLATILE
+
+        # Cold chain sensor readings (source: MQTT bridge, consumer: Kafka bridge)
+        - name: "coldchain/temperature"
+          type: "WooliesColdChainReading"
+          direction: subscribe
+          qos:
+            reliability: BEST_EFFORT    # OK for sensor readings — MQTT handles QoS
+            durability: VOLATILE
+
+        # Outlier filter output — clean events only (to Kafka)
+        - name: "events/clean"
+          type: "WooliesCleanEvent"
+          direction: publish_subscribe
+
+    # ── Bayesian outlier filter ───────────────────────────────────────────────
+    # Watches all DDS topics — quarantines anomalous events before Kafka
+    # Pattern: CCG bird project Bering Strait noise filter
+    # If a SKU shows > 5x normal scan rate in 60s → flag as stuck scanner
+    outlier_filter:
+      enabled: true
+      window_seconds: 60
+      threshold_multiplier: 5.0
+      action: quarantine           # quarantine | drop | alert_only
+      alert_topic: "alerts/outlier"
+
+    # ── MQTT bridge (cold chain IoT → DDS) ────────────────────────────────────
+    mqtt_bridge:
+      broker_host: "localhost"
+      broker_port: 1883
+      client_id: "dds-gateway-mqtt"
+      topic_map:
+        # MQTT topic → DDS topic
+        "sensors/coldchain/+/temperature": "coldchain/temperature"
+        "sensors/coldchain/+/status":      "coldchain/status"
+
+    # ── Kafka bridge (DDS → Kafka → GCP Pub/Sub) ──────────────────────────────
+    kafka_bridge:
+      bootstrap_servers: "localhost:9092"
+      topic_map:
+        # DDS topic → Kafka topic
+        "events/clean":       "woolies.store.events"
+        "inventory/update":   "woolies.store.inventory"
+        "alerts/outlier":     "woolies.store.alerts"
+      producer_config:
+        acks: "1"                # balance durability vs latency
+        linger_ms: 5             # small batch window for throughput
+        compression_type: "lz4"
+
+  # ── IDL type definitions (simplified) ────────────────────────────────────
+  types.idl: |
+    struct WooliesPOSTransaction {
+      string store_id;           //@key
+      string basket_id;
+      string sku;
+      long   quantity;
+      double price;
+      string timestamp;          // ISO 8601
+      boolean offline_mode;      // true if WAN was down when transaction occurred
+    };
+
+    struct WooliesInventoryUpdate {
+      string store_id;           //@key
+      string sku;
+      long   stock_delta;
+      long   stock_on_hand;
+      string updated_at;
+    };
+
+    struct WooliesColdChainReading {
+      string store_id;           //@key
+      string sensor_id;
+      string zone;               // dairy | frozen | produce
+      double temp_celsius;
+      double threshold_max;
+      boolean threshold_breached;
+      string timestamp;
+    };

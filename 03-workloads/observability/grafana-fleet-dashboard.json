@@ -1,0 +1,217 @@
+{
+  "__comment": "Woolworths edge fleet dashboard — 3,000 stores on one view",
+  "__comment2": "Import into Grafana: Dashboards → Import → paste this JSON",
+  "title": "WooliesX Edge Fleet — Store Health",
+  "uid": "woolies-edge-fleet",
+  "tags": ["wooliesx", "edge", "fleet", "stores"],
+  "timezone": "Australia/Sydney",
+  "schemaVersion": 38,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+
+  "templating": {
+    "list": [
+      {
+        "name": "store_state",
+        "label": "State",
+        "type": "query",
+        "query": "label_values(up{job=\"store-pos\"}, store_state)",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "store_tier",
+        "label": "Store tier",
+        "type": "query",
+        "query": "label_values(up{job=\"store-pos\"}, store_tier)",
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+
+  "panels": [
+    {
+      "id": 1,
+      "title": "Fleet status — all stores",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "count(up{job=\"microshift-api\"} == 1)",
+          "legendFormat": "Stores online"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "thresholds": {
+          "steps": [
+            { "color": "red",   "value": 0 },
+            { "color": "yellow","value": 2700 },
+            { "color": "green", "value": 2950 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Stores offline / unreachable",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "count(up{job=\"microshift-api\"} == 0) OR vector(0)",
+          "legendFormat": "Stores offline"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow","value": 10 },
+            { "color": "red",   "value": 50 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "POS error rate (fleet-wide)",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(pos_transaction_errors_total[5m])) / sum(rate(pos_transactions_total[5m]))",
+          "legendFormat": "POS error rate"
+        }
+      ],
+      "options": {
+        "unit": "percentunit",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow","value": 0.02 },
+            { "color": "red",   "value": 0.05 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Cold chain alerts active",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "count(coldchain_temperature_threshold_breached == 1) OR vector(0)",
+          "legendFormat": "Cold chain alerts"
+        }
+      ],
+      "options": {
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow","value": 1 },
+            { "color": "red",   "value": 5 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "ACM compliance — CIS L2 pass rate",
+      "type": "gauge",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum(acm_policy_compliant) / sum(acm_policy_total) * 100",
+          "legendFormat": "CIS compliance %"
+        }
+      ],
+      "options": {
+        "unit": "percent",
+        "min": 0, "max": 100,
+        "thresholds": {
+          "steps": [
+            { "color": "red",    "value": 0 },
+            { "color": "yellow", "value": 90 },
+            { "color": "green",  "value": 99 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Store fleet map — green / amber / red",
+      "description": "One tile per store. Green = healthy. Amber = degraded. Red = offline or alert.",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 12 },
+      "targets": [
+        {
+          "expr": "up{job=\"microshift-api\", store_state=~\"$store_state\", store_tier=~\"$store_tier\"}",
+          "legendFormat": "{{store_id}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "steps": [
+                    { "color": "red",   "value": 0 },
+                    { "color": "green", "value": 1 }
+                  ]
+                }
+              },
+              { "id": "custom.displayMode", "value": "color-background" },
+              { "id": "mappings", "value": [
+                { "type": "value", "options": { "0": { "text": "OFFLINE" }, "1": { "text": "ONLINE" } } }
+              ]}
+            ]
+          }
+        ]
+      },
+      "transformations": [
+        { "id": "labelsToFields", "options": { "mode": "rows" } },
+        { "id": "organize", "options": {
+          "renameByName": {
+            "store_id":    "Store",
+            "store_state": "State",
+            "store_tier":  "Tier",
+            "Value":       "Status"
+          }
+        }}
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Kafka event lag — POS events queue depth",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "max by (store_id) (kafka_consumer_group_lag{topic=\"woolies.store.events\"})",
+          "legendFormat": "{{store_id}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "greenboot rollbacks (last 24h)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "increase(greenboot_failure_total[1h])",
+          "legendFormat": "{{store_id}} rollback"
+        }
+      ]
+    }
+  ]
+}

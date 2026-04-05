@@ -1,0 +1,160 @@
+---
+# 03-workloads/platform-ai/rollout-controller/rollout-controller.yaml
+# MCP AI agent — canary wave rollout controller
+#
+# Watches: Thanos metrics, ArgoCD sync status, ACM compliance state
+# Acts on: pause/resume canary waves, trigger rollbacks, fire alerts
+#
+# Deployed on: central OCP hub (Bella Vista DC)
+# Does NOT run on store nodes — hub-side control plane only
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: woolies-rollout-controller
+  namespace: platform-ai
+  labels:
+    app.kubernetes.io/name: rollout-controller
+    app.kubernetes.io/component: platform-ai
+    app.kubernetes.io/version: "1.0.0"
+  annotations:
+    woolies.platform/description: "MCP agent — canary wave gate controller"
+    woolies.platform/phase: "Phase 2+"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rollout-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rollout-controller
+    spec:
+      serviceAccountName: rollout-controller
+      containers:
+        - name: controller
+          image: registry.woolies.internal:5000/platform-ai/rollout-controller:1.0.0
+          env:
+            - name: THANOS_URL
+              value: "http://thanos-query.observability.svc:9090"
+            - name: ARGOCD_SERVER
+              value: "argocd-server.argocd.svc"
+            - name: ACM_HUB_NAMESPACE
+              value: "open-cluster-management"
+            - name: ALERTMANAGER_URL
+              value: "http://alertmanager.observability.svc:9093"
+            - name: WAVE_SIZE
+              value: "50"          # stores per wave
+            - name: ERROR_RATE_THRESHOLD
+              value: "0.05"        # 5% — pause wave above this
+            - name: ROLLBACK_THRESHOLD
+              value: "0.15"        # 15% — auto-rollback above this
+            - name: EVAL_INTERVAL_SECONDS
+              value: "60"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: argocd-token
+              mountPath: /var/run/secrets/argocd
+              readOnly: true
+      volumes:
+        - name: argocd-token
+          secret:
+            secretName: rollout-controller-argocd-token
+
+---
+# RBAC — minimal permissions (least privilege)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rollout-controller
+  namespace: platform-ai
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: woolies-rollout-controller
+rules:
+  # Read ManagedCluster objects (ACM)
+  - apiGroups: ["cluster.open-cluster-management.io"]
+    resources: ["managedclusters"]
+    verbs: ["get", "list", "watch", "patch"]
+  # Read/patch ArgoCD Applications
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "applicationsets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # Read ConfigurationPolicy compliance (ACM)
+  - apiGroups: ["policy.open-cluster-management.io"]
+    resources: ["policies", "configurationpolicies"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: woolies-rollout-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: woolies-rollout-controller
+subjects:
+  - kind: ServiceAccount
+    name: rollout-controller
+    namespace: platform-ai
+
+---
+# ConfigMap — wave gate thresholds and business rules
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rollout-controller-config
+  namespace: platform-ai
+data:
+  config.yaml: |
+    wave:
+      size: 50                   # stores per wave
+      interval_hours: 24         # minimum time between waves
+      max_concurrent_waves: 1    # one wave at a time
+      blackout_windows:
+        - cron: "0 7-21 * * 1-6"  # no rollouts during trading hours Mon-Sat
+        - cron: "0 8-20 * * 0"    # no rollouts during trading hours Sunday
+
+    gates:
+      # Thanos PromQL queries — evaluated before each wave starts
+      pre_wave_checks:
+        - name: "pos_error_rate"
+          query: 'rate(pos_transaction_errors_total[5m]) / rate(pos_transactions_total[5m])'
+          threshold: 0.05
+          action: pause
+
+        - name: "microshift_api_availability"
+          query: 'avg(up{job="microshift-api"}) by (store_id)'
+          threshold: 0.95         # 95% of stores in wave must have healthy API
+          action: pause
+
+        - name: "acm_compliance_rate"
+          query: 'sum(acm_policy_compliant) / sum(acm_policy_total)'
+          threshold: 0.90
+          action: pause
+
+      # Evaluated continuously during wave rollout
+      in_wave_checks:
+        - name: "rollback_trigger"
+          query: 'rate(greenboot_failure_total[10m])'
+          threshold: 0.15         # 15% failure rate → auto-rollback whole wave
+          action: rollback
+
+        - name: "kafka_queue_depth"
+          query: 'kafka_consumer_group_lag{topic="woolies.store.events"}'
+          threshold: 10000        # lag > 10k → store struggling, pause
+          action: pause
+
+    notifications:
+      slack_channel: "#edge-platform-rollouts"
+      pagerduty_severity: "warning"  # for pauses; "critical" for rollbacks

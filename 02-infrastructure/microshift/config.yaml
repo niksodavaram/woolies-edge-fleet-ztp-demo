@@ -1,0 +1,78 @@
+# /etc/microshift/config.yaml
+# MicroShift configuration — Woolworths Metro/liquor store node
+# Applied at: Day 1.5 via Ansible role k8s-prep
+# Docs: https://access.redhat.com/documentation/en-us/red_hat_build_of_microshift
+
+---
+apiVersion: v1
+kind: MicroShiftConfig
+
+# ── API server ────────────────────────────────────────────────────────────────
+apiServer:
+  # Allow ACM klusterlet and Ansible to reach the API
+  subjectAltNames:
+    - localhost
+    - 127.0.0.1
+    - "{{ ansible_default_ipv4.address }}"
+    - "store-{{ woolies_store_id }}.woolies.internal"
+  # Audit policy — all requests logged for PCI-DSS
+  auditLog:
+    maxFileSize: 200    # MB
+    maxFiles: 10
+    maxRequestBodySize: 65536
+    profile: WriteRequestBodies
+
+# ── Networking (OVN-Kubernetes) ───────────────────────────────────────────────
+network:
+  clusterNetwork:
+    - cidr: 10.42.0.0/16      # pod CIDR — unique per store tier
+  serviceNetwork:
+    - 10.43.0.0/16            # service CIDR
+  serviceNodePortRange: 30000-32767
+  dns:
+    baseDomain: "store-{{ woolies_store_id }}.woolies.internal"
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node:
+  hostnameOverride: "store-{{ woolies_store_id }}"
+  nodeIP: ""    # auto-detect from default route
+
+# ── Storage (LVMS) ────────────────────────────────────────────────────────────
+# MicroShift uses LVMS CSI — requires an LVM volume group named 'rhel'
+# Kickstart creates: part pv.01 --grow + volgroup rhel pv.01
+storage:
+  driver: lvms   # logical volume manager storage — default for MicroShift
+
+# ── etcd ─────────────────────────────────────────────────────────────────────
+etcd:
+  memoryLimitMB: 128    # constrain for low-RAM store servers (4-8 GB)
+
+# ── Manifests loaded at startup ───────────────────────────────────────────────
+# MicroShift loads manifests from these paths on every start
+# Used for: Prometheus ServiceMonitor, MQTT NetworkPolicy, ACM klusterlet pre-req
+manifests:
+  kustomizePaths:
+    - /usr/lib/microshift/manifests
+    - /etc/microshift/manifests          # store-specific overrides
+
+# ── Ingress (OpenShift Routes) ────────────────────────────────────────────────
+# MicroShift supports Routes (not Ingress) — same as full OCP
+ingress:
+  listenAddress:
+    - "{{ ansible_default_ipv4.address }}"
+  ports:
+    http: 80
+    https: 443
+  routeAdmissionPolicy:
+    namespaceOwnership: InterNamespaceAllowed
+
+# ── Image pull (internal mirror — disconnected-safe) ─────────────────────────
+# Stores can run fully air-gapped — no direct internet required
+# Mirror populated by: oc adm release mirror → registry.woolies.internal:5000
+imageContentSourcePolicy:
+  - mirrors:
+      - registry.woolies.internal:5000/openshift
+    source: quay.io/openshift-release-dev/ocp-release
+  - mirrors:
+      - registry.woolies.internal:5000/ubi9
+    source: registry.access.redhat.com/ubi9
