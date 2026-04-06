@@ -1,0 +1,32 @@
+# 01-bootstrap/roles/k8s-prep/molecule/default/converge.yml
+---
+- name: Converge — Woolies Edge k8s-prep
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Install k8s prep prerequisites
+      ansible.builtin.dnf:
+        name:
+          - cri-o
+          - cri-tools
+          - conntrack-tools
+        state: present
+
+    - name: Pre-create MicroShift and CRI-O directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - /var/lib/microshift
+        - /var/lib/microshift/resources
+        - /var/lib/microshift/resources/kubeadmin
+        - /etc/microshift
+        - /etc/crio
+        - /etc/containers/registries.conf.d
+
+  roles:
+    - role: k8s-prep

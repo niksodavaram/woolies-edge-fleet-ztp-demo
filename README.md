@@ -114,7 +114,7 @@ Migration phase per store is tracked in `image.toml` — MCP agents and ArgoCD w
  
 ### Migration state machine
  
-```mermaid
+```
 stateDiagram-v2
   [*] --> P0
  
@@ -139,27 +139,27 @@ stateDiagram-v2
  
 ## Technology Stack
  
-| Layer | Technology | Status |
-|---|---|---|
-| OS | RHEL 9 for Edge — image mode, ostree, SELinux enforcing, CIS L2 | Proposed |
-| Image build | **RHEL Image Builder** (`image.toml` blueprint) — Packer optional CI wrapper | Proposed |
-| OS safety net | **greenboot** health checks + **ostree** auto-rollback — under 5 min | Proposed |
-| Provisioning | Kickstart — zero-touch, unattended, writes `/etc/woolies/node-metadata.json` | Proposed |
-| Configuration | Ansible — CIS hardening, networking, k8s-prep, telemetry bootstrap | Proposed |
-| Container platform | **MicroShift** (Metro/liquor) + **OpenShift SNO** (large stores) | Proposed |
-| Fleet management | Red Hat ACM — hub+spoke, GitOps-native policy engine, klusterlet | Proposed |
-| GitOps | ArgoCD — App-of-Apps, AppProject RBAC, ApplicationSet per store tier | Proposed |
-| Secrets | HashiCorp Vault + External Secrets Operator — zero secrets in Git | Proposed |
-| Windows bridge | **KubeVirt** — runs Windows checkout VM inside SNO during P1–P3 | Proposed |
-| Low-latency bus | **RTI DDS** gateway — intra-store pub-sub, Bayesian outlier filter | Proposed |
-| IoT messaging | **MQTT** (Mosquitto) — cold chain sensors, :1883, local retain, LWT | Proposed |
-| Event streaming | **Kafka** local buffer — POS→BigQuery, WAN-resilient, ordered replay | Proposed |
-| App APM | **Dynatrace** — existing WooliesX confirmed tool, application layer | Existing |
+| Layer               | Technology                                                                              | Status   |
+| ---------------------| -----------------------------------------------------------------------------------------| ----------|
+| OS                  | RHEL 9 for Edge — image mode, ostree, SELinux enforcing, CIS L2                         | Proposed |
+| Image build         | **RHEL Image Builder** (`image.toml` blueprint) — Packer optional CI wrapper            | Proposed |
+| OS safety net       | **greenboot** health checks + **ostree** auto-rollback — under 5 min                    | Proposed |
+| Provisioning        | Kickstart — zero-touch, unattended, writes `/etc/woolies/node-metadata.json`            | Proposed |
+| Configuration       | Ansible — CIS hardening, networking, k8s-prep, telemetry bootstrap                      | Proposed |
+| Container platform  | **MicroShift** (Metro/liquor) + **OpenShift SNO** (large stores)                        | Proposed |
+| Fleet management    | Red Hat ACM — hub+spoke, GitOps-native policy engine, klusterlet                        | Proposed |
+| GitOps              | ArgoCD — App-of-Apps, AppProject RBAC, ApplicationSet per store tier                    | Proposed |
+| Secrets             | HashiCorp Vault + External Secrets Operator — zero secrets in Git                       | Proposed |
+| Windows bridge      | **KubeVirt** — runs Windows checkout VM inside SNO during P1–P3                         | Proposed |
+| Low-latency bus     | **RTI DDS** gateway — intra-store pub-sub, Bayesian outlier filter                      | Proposed |
+| IoT messaging       | **MQTT** (Mosquitto) — cold chain sensors, :1883, local retain, LWT                     | Proposed |
+| Event streaming     | **Kafka** local buffer — POS→BigQuery, WAN-resilient, ordered replay                    | Proposed |
+| App APM             | **Dynatrace** — existing WooliesX confirmed tool, application layer                     | Existing |
 | Infra observability | Prometheus + **Thanos** + **Loki** + Grafana — fleet infra layer, 3,000 stores one view | Proposed |
-| Platform AI | **MCP agents** — rollout gating, auto-heal, CVE patching, predictive failure | Proposed |
-| Image registry | Internal mirror `registry.woolies.internal:5000` — disconnected-safe | Proposed |
-| Network | Cisco SD-WAN — existing, ZTP trigger, MPLS + broadband + 4G/5G failover | Existing |
-| Hardware | x86\_64 store edge server — 4–16 GB RAM, 120 GB+ SSD, CIS-partitioned | Existing |
+| Platform AI         | **MCP agents** — rollout gating, auto-heal, CVE patching, predictive failure            | Proposed |
+| Image registry      | Internal mirror `registry.woolies.internal:5000` — disconnected-safe                    | Proposed |
+| Network             | Cisco SD-WAN — existing, ZTP trigger, MPLS + broadband + 4G/5G failover                 | Existing |
+| Hardware            | x86\_64 store edge server — 4–16 GB RAM, 120 GB+ SSD, CIS-partitioned                   | Existing |
  
 ---
  

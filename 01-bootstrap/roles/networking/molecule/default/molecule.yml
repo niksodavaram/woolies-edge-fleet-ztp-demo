@@ -1,0 +1,52 @@
+# 01-bootstrap/roles/networking/molecule/default/molecule.yml
+---
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ../../requirements.yml
+
+driver:
+  name: docker
+
+platforms:
+  - name: woolies-networking-rhel9
+    image: registry.access.redhat.com/ubi9/ubi-init:latest
+    pre_build_image: true
+    command: /usr/sbin/init
+    cgroupns_mode: host
+    tmpfs:
+      - /run
+      - /tmp
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    capabilities:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    published_ports:
+      - "16443:6443/tcp"
+      - "11883:1883/tcp"
+      - "19090:9090/tcp"
+    privileged: false
+    env:
+      container: docker
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      interpreter_python: auto_silent
+  playbooks:
+    converge: converge.yml
+    verify: verify.yml
+
+verifier:
+  name: ansible
+
+scenario:
+  name: default
+
+lint: |
+  set -e
+  yamllint .
+  ansible-lint .

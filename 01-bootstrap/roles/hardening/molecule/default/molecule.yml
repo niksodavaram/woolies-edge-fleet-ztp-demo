@@ -1,0 +1,27 @@
+# 01-bootstrap/roles/hardening/molecule/default/molecule.yml
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ../../requirements.yml
+
+driver:
+  name: docker
+
+platforms:
+  - name: woolies-hardening-rhel9
+    image: registry.access.redhat.com/ubi9/ubi-init:latest
+    privileged: false
+    cgroupns_mode: host
+    tmpfs: [/run, /tmp]
+    volumes: [/sys/fs/cgroup:/sys/fs/cgroup:ro]
+    capabilities: [SYS_ADMIN, AUDIT_WRITE, AUDIT_CONTROL]
+    command: "/usr/sbin/init"
+    pre_build_image: true
+    env:
+      container: docker
+    # host_vars:
+    #   cis_level: "level2"
+    #   oscap_profile: "xccdf_org.ssgproject.content_profile_cis_workstation_l2"
+
+verifier:
+  name: ansible

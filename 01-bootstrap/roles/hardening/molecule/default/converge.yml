@@ -1,0 +1,37 @@
+# 01-bootstrap/roles/hardening/molecule/default/converge.yml
+---
+- name: Converge — Woolies Edge Hardening
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Install hardening prerequisites
+      ansible.builtin.dnf:
+        name:
+          - aide
+          - audit
+          - openscap-scanner
+          - scap-security-guide
+          - openssh-server
+        state: present
+
+    - name: Ensure auditd directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+      loop:
+        - /etc/audit/rules.d
+        - /etc/security
+        - /etc/ssh
+
+    - name: Ensure sshd_config exists for testing
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config
+        state: touch
+        mode: "0600"
+
+  roles:
+    - role: hardening

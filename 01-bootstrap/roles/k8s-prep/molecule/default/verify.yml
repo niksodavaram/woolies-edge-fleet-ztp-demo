@@ -1,0 +1,154 @@
+# 01-bootstrap/roles/k8s-prep/molecule/default/verify.yml
+---
+- name: Verify — Woolies Edge k8s-prep
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: rpm
+
+    - name: Assert | cri-o package is installed
+      ansible.builtin.assert:
+        that:
+          - "'cri-o' in ansible_facts.packages"
+        fail_msg: "FAIL: cri-o package is not installed"
+
+    - name: Check /var/lib/microshift
+      ansible.builtin.stat:
+        path: /var/lib/microshift
+      register: microshift_dir
+
+    - name: Assert | /var/lib/microshift ownership and mode
+      ansible.builtin.assert:
+        that:
+          - microshift_dir.stat.exists
+          - microshift_dir.stat.isdir
+          - microshift_dir.stat.pw_name == 'root'
+          - microshift_dir.stat.mode == '0750'
+        fail_msg: "FAIL: /var/lib/microshift must exist, be root-owned, and mode 0750"
+
+    - name: Find disconnected registry config
+      ansible.builtin.find:
+        paths: /etc/containers/registries.conf.d
+        patterns: "woolies-*.conf"
+        file_type: file
+      register: registry_conf_files
+
+    - name: Assert | woolies registry config exists
+      ansible.builtin.assert:
+        that:
+          - registry_conf_files.matched | int > 0
+        fail_msg: "FAIL: no woolies-*.conf file found in /etc/containers/registries.conf.d"
+
+    - name: Read first registry config
+      ansible.builtin.slurp:
+        src: "{{ registry_conf_files.files[0].path }}"
+      register: registry_conf_raw
+      when: registry_conf_files.matched | int > 0
+
+    - name: Assert | registry mirror points to registry.woolies.internal
+      ansible.builtin.assert:
+        that:
+          - "'registry.woolies.internal' in (registry_conf_raw.content | b64decode)"
+        fail_msg: "FAIL: registry mirror config does not reference registry.woolies.internal"
+      when: registry_conf_files.matched | int > 0
+
+    - name: Check CRI-O pull secret
+      ansible.builtin.stat:
+        path: /etc/crio/openshift-pull-secret
+      register: pull_secret_stat
+
+    - name: Assert | pull secret exists with 0600 mode
+      ansible.builtin.assert:
+        that:
+          - pull_secret_stat.stat.exists
+          - pull_secret_stat.stat.pw_name == 'root'
+          - pull_secret_stat.stat.mode == '0600'
+        fail_msg: "FAIL: /etc/crio/openshift-pull-secret must exist, be root-owned, and mode 0600"
+
+    - name: Check MicroShift config
+      ansible.builtin.stat:
+        path: /etc/microshift/config.yaml
+      register: microshift_config_stat
+
+    - name: Assert | /etc/microshift/config.yaml exists
+      ansible.builtin.assert:
+        that:
+          - microshift_config_stat.stat.exists
+        fail_msg: "FAIL: /etc/microshift/config.yaml does not exist"
+
+    - name: Read MicroShift config
+      ansible.builtin.slurp:
+        src: /etc/microshift/config.yaml
+      register: microshift_config_raw
+      when: microshift_config_stat.stat.exists
+
+    - name: Assert | advertiseAddress present in config
+      ansible.builtin.assert:
+        that:
+          - "'advertiseAddress' in (microshift_config_raw.content | b64decode)"
+        fail_msg: "FAIL: advertiseAddress missing from /etc/microshift/config.yaml"
+      when: microshift_config_stat.stat.exists
+
+    - name: Check kubeadmin directory
+      ansible.builtin.stat:
+        path: /var/lib/microshift/resources/kubeadmin
+      register: kubeadmin_dir
+
+    - name: Assert | kubeadmin directory exists
+      ansible.builtin.assert:
+        that:
+          - kubeadmin_dir.stat.exists
+          - kubeadmin_dir.stat.isdir
+        fail_msg: "FAIL: /var/lib/microshift/resources/kubeadmin must exist as a directory"
+
+    - name: Check nf_conntrack availability
+      ansible.builtin.command: modinfo nf_conntrack
+      register: nf_conntrack_check
+      changed_when: false
+      failed_when: false
+
+    - name: Assert | nf_conntrack module available
+      ansible.builtin.assert:
+        that:
+          - nf_conntrack_check.rc == 0
+        fail_msg: "FAIL: nf_conntrack kernel module is not available"
+
+    - name: Check node metadata file
+      ansible.builtin.stat:
+        path: /etc/woolies/node-metadata.json
+      register: node_metadata_stat
+
+    - name: Assert | node metadata file exists
+      ansible.builtin.assert:
+        that:
+          - node_metadata_stat.stat.exists
+        fail_msg: "FAIL: /etc/woolies/node-metadata.json is missing"
+
+    - name: Read node metadata JSON
+      ansible.builtin.slurp:
+        src: /etc/woolies/node-metadata.json
+      register: node_metadata_raw
+      when: node_metadata_stat.stat.exists
+
+    - name: Parse node metadata JSON
+      ansible.builtin.set_fact:
+        node_metadata: "{{ node_metadata_raw.content | b64decode | from_json }}"
+      when: node_metadata_stat.stat.exists
+
+    - name: Assert | migration_phase is valid
+      ansible.builtin.assert:
+        that:
+          - node_metadata.migration_phase in ['P0', 'P1', 'P2', 'P3', 'P4']
+        fail_msg: "FAIL: migration_phase must be one of P0-P4"
+      when: node_metadata_stat.stat.exists
+
+    - name: Assert | platform is rhel9-microshift
+      ansible.builtin.assert:
+        that:
+          - node_metadata.platform == 'rhel9-microshift'
+        fail_msg: "FAIL: platform must be rhel9-microshift"
+      when: node_metadata_stat.stat.exists

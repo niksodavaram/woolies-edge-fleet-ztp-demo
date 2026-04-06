@@ -1,0 +1,78 @@
+# 01-bootstrap/roles/networking/molecule/default/verify.yml
+---
+- name: Verify — Woolies Edge Networking
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert | NetworkManager service is running
+      ansible.builtin.assert:
+        that:
+          - "'NetworkManager.service' in ansible_facts.services"
+          - "ansible_facts.services['NetworkManager.service'].state == 'running'"
+        fail_msg: "FAIL: NetworkManager.service is not running"
+
+    - name: Assert | firewalld service is running
+      ansible.builtin.assert:
+        that:
+          - "'firewalld.service' in ansible_facts.services"
+          - "ansible_facts.services['firewalld.service'].state == 'running'"
+        fail_msg: "FAIL: firewalld.service is not running"
+
+    - name: Get allowed firewall services
+      ansible.builtin.command: firewall-cmd --list-services
+      register: firewall_services
+      changed_when: false
+
+    - name: Assert | firewall allows ssh and https
+      ansible.builtin.assert:
+        that:
+          - "'ssh' in firewall_services.stdout.split()"
+          - "'https' in firewall_services.stdout.split()"
+        fail_msg: "FAIL: firewall does not allow both ssh and https"
+
+    - name: Assert | firewall does not allow telnet or ftp
+      ansible.builtin.assert:
+        that:
+          - "'telnet' not in firewall_services.stdout.split()"
+          - "'ftp' not in firewall_services.stdout.split()"
+        fail_msg: "FAIL: telnet or ftp is allowed through firewall"
+
+    - name: Get allowed firewall ports
+      ansible.builtin.command: firewall-cmd --list-ports
+      register: firewall_ports
+      changed_when: false
+
+    - name: Assert | firewall allows 6443/tcp, 1883/tcp, 9090/tcp
+      ansible.builtin.assert:
+        that:
+          - "'6443/tcp' in firewall_ports.stdout.split()"
+          - "'1883/tcp' in firewall_ports.stdout.split()"
+          - "'9090/tcp' in firewall_ports.stdout.split()"
+        fail_msg: "FAIL: required ports 6443/tcp, 1883/tcp, 9090/tcp are not all open"
+
+    - name: Check nmstate version
+      ansible.builtin.command: nmstatectl version
+      register: nmstate_version
+      changed_when: false
+
+    - name: Assert | nmstatectl is available
+      ansible.builtin.assert:
+        that:
+          - "nmstate_version.rc == 0"
+        fail_msg: "FAIL: nmstatectl command failed"
+
+    - name: Get short hostname
+      ansible.builtin.command: hostname -s
+      register: short_hostname
+      changed_when: false
+
+    - name: Assert | hostname matches store or woolies convention
+      ansible.builtin.assert:
+        that:
+          - "short_hostname.stdout is match('^(store-|woolies-)')"
+        fail_msg: "FAIL: hostname '{{ short_hostname.stdout }}' does not match ^(store-|woolies-) naming convention"

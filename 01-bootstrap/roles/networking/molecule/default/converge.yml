@@ -1,0 +1,30 @@
+# 01-bootstrap/roles/networking/molecule/default/converge.yml
+---
+- name: Converge — Woolies Edge Networking
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Install networking prerequisites
+      ansible.builtin.dnf:
+        name:
+          - NetworkManager
+          - nmstate
+          - firewalld
+          - openvswitch
+        state: present
+
+    - name: Ensure NetworkManager is enabled and running
+      ansible.builtin.systemd:
+        name: NetworkManager
+        enabled: true
+        state: started
+
+    - name: Ensure firewalld is enabled and running
+      ansible.builtin.systemd:
+        name: firewalld
+        enabled: true
+        state: started
+
+  roles:
+    - role: networking

@@ -1,0 +1,198 @@
+# 01-bootstrap/roles/hardening/molecule/default/verify.yml
+---
+- name: Verify — Woolies Edge Hardening (CIS Level 2)
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # SELinux enforcing
+    - name: Check SELinux status
+      ansible.builtin.command: getenforce
+      changed_when: false
+      register: selinux_status
+
+    - name: Assert | SELinux is enforcing
+      ansible.builtin.assert:
+        that: "'Enforcing' in selinux_status.stdout"
+        fail_msg: "FAIL: SELinux is '{{ selinux_status.stdout }}' — must be Enforcing"
+
+    - name: Check /etc/selinux/config
+      ansible.builtin.slurp:
+        src: /etc/selinux/config
+      register: selinux_conf
+
+    - name: Assert | /etc/selinux/config set to enforcing
+      ansible.builtin.assert:
+        that: "'SELINUX=enforcing' in (selinux_conf.content | b64decode)"
+        fail_msg: "FAIL: /etc/selinux/config does not set enforcing"
+
+    # Insecure packages removed
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: rpm
+
+    - name: Assert | telnet not installed
+      ansible.builtin.assert:
+        that: "'telnet' not in ansible_facts.packages"
+        fail_msg: "FAIL: telnet is installed — must be removed"
+
+    - name: Assert | rsh not installed
+      ansible.builtin.assert:
+        that: "'rsh' not in ansible_facts.packages"
+        fail_msg: "FAIL: rsh is installed — must be removed"
+
+    - name: Assert | tftp not installed
+      ansible.builtin.assert:
+        that: "'tftp' not in ansible_facts.packages"
+        fail_msg: "FAIL: tftp is installed — must be removed"
+
+    - name: Assert | setroubleshoot not installed
+      ansible.builtin.assert:
+        that: "'setroubleshoot' not in ansible_facts.packages"
+        fail_msg: "FAIL: setroubleshoot should not be installed"
+
+    # sysctl hardening
+    - name: Read sysctl values
+      ansible.builtin.command: "sysctl {{ item }}"
+      changed_when: false
+      register: sysctl_vals
+      loop:
+        - net.ipv4.ip_forward
+        - net.ipv4.conf.all.accept_redirects
+        - net.ipv4.conf.all.send_redirects
+        - net.ipv6.conf.all.accept_ra
+        - kernel.randomize_va_space
+        - fs.suid_dumpable
+        - net.ipv4.conf.all.log_martians
+
+    - name: Assert | IP forwarding disabled
+      ansible.builtin.assert:
+        that: "'net.ipv4.ip_forward = 0' in (sysctl_vals.results | map(attribute='stdout') | list)"
+        fail_msg: "FAIL: net.ipv4.ip_forward != 0"
+
+    - name: Assert | ICMP redirects not accepted
+      ansible.builtin.assert:
+        that: "'net.ipv4.conf.all.accept_redirects = 0' in (sysctl_vals.results | map(attribute='stdout') | list)"
+        fail_msg: "FAIL: accept_redirects != 0"
+
+    - name: Assert | ASLR enabled
+      ansible.builtin.assert:
+        that: "'kernel.randomize_va_space = 2' in (sysctl_vals.results | map(attribute='stdout') | list)"
+        fail_msg: "FAIL: ASLR not enabled"
+
+    - name: Assert | core dumps restricted
+      ansible.builtin.assert:
+        that: "'fs.suid_dumpable = 0' in (sysctl_vals.results | map(attribute='stdout') | list)"
+        fail_msg: "FAIL: fs.suid_dumpable != 0"
+
+    - name: Assert | martians logged
+      ansible.builtin.assert:
+        that: "'net.ipv4.conf.all.log_martians = 1' in (sysctl_vals.results | map(attribute='stdout') | list)"
+        fail_msg: "FAIL: log_martians != 1"
+
+    # Audit rules
+    - name: Check woolies audit rules file
+      ansible.builtin.stat:
+        path: /etc/audit/rules.d/99-woolies.rules
+      register: audit_rules
+
+    - name: Assert | woolies audit rules file exists
+      ansible.builtin.assert:
+        that: audit_rules.stat.exists
+        fail_msg: "FAIL: /etc/audit/rules.d/99-woolies.rules not created"
+
+    - name: Slurp audit rules
+      ansible.builtin.slurp:
+        src: /etc/audit/rules.d/99-woolies.rules
+      register: audit_rules_content
+      when: audit_rules.stat.exists
+
+    - name: Assert | /etc/passwd is audited
+      ansible.builtin.assert:
+        that: "'-w /etc/passwd' in (audit_rules_content.content | b64decode)"
+        fail_msg: "FAIL: /etc/passwd not audited"
+      when: audit_rules.stat.exists
+
+    - name: Assert | /etc/shadow is audited
+      ansible.builtin.assert:
+        that: "'-w /etc/shadow' in (audit_rules_content.content | b64decode)"
+        fail_msg: "FAIL: /etc/shadow not audited"
+      when: audit_rules.stat.exists
+
+    - name: Assert | /etc/sudoers is audited
+      ansible.builtin.assert:
+        that: "'-w /etc/sudoers' in (audit_rules_content.content | b64decode)"
+        fail_msg: "FAIL: /etc/sudoers not audited"
+      when: audit_rules.stat.exists
+
+    - name: Assert | execve syscall audited
+      ansible.builtin.assert:
+        that: "'-S execve' in (audit_rules_content.content | b64decode)"
+        fail_msg: "FAIL: execve not audited"
+      when: audit_rules.stat.exists
+
+    # SSH hardening
+    - name: Read sshd_config
+      ansible.builtin.slurp:
+        src: /etc/ssh/sshd_config
+      register: sshd_config
+
+    - name: Assert | PermitRootLogin hardened
+      ansible.builtin.assert:
+        that: >
+          'PermitRootLogin no' in (sshd_config.content | b64decode) or
+          'PermitRootLogin without-password' in (sshd_config.content | b64decode)
+        fail_msg: "FAIL: PermitRootLogin not hardened"
+
+    - name: Assert | PasswordAuthentication disabled
+      ansible.builtin.assert:
+        that: "'PasswordAuthentication no' in (sshd_config.content | b64decode)"
+        fail_msg: "FAIL: PasswordAuthentication is not disabled"
+
+    - name: Assert | X11Forwarding disabled
+      ansible.builtin.assert:
+        that: "'X11Forwarding no' in (sshd_config.content | b64decode)"
+        fail_msg: "FAIL: X11Forwarding not disabled"
+
+    - name: Assert | SSH protocol 1 not used
+      ansible.builtin.assert:
+        that: "'Protocol 1' not in (sshd_config.content | b64decode)"
+        fail_msg: "FAIL: SSH Protocol 1 must be disabled"
+
+    # AIDE installed
+    - name: Assert | AIDE installed
+      ansible.builtin.assert:
+        that: "'aide' in ansible_facts.packages"
+        fail_msg: "FAIL: AIDE not installed"
+
+    # Core dump limits
+    - name: Check limits.conf for core dumps
+      ansible.builtin.slurp:
+        src: /etc/security/limits.conf
+      register: limits_conf
+
+    - name: Assert | hard core limit is 0
+      ansible.builtin.assert:
+        that: "'hard' in (limits_conf.content | b64decode) and 'core' in (limits_conf.conteges"
+        fail_msg: "FAIL: AIDE not installed"
+
+    # Core dump limits
+    - name: Check limits.conf for core dumps
+      ansible.builtin.slurp:
+        src: /etc/security/limits.conf
+      register: limits_conf
+
+    - name: Assert | hard core limit is 0
+      ansible.bui ansible.buit that wires these into a Docker-based RHEL9 test instance, or is the existing one in your repo already close enough?ges"
+        fail_msg: "FAIL: AIDE not installed"
+
+    # Core dump limits
+    - name: Check limits.conf for core dumps
+      ansible.builtin.slurp:
+        src: /etc/security/limits.conf
+      register: limits_conf
+
+    - name: Assert | hard core limit is 0
+      ansible.bui
