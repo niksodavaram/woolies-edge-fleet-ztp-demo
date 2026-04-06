@@ -21,6 +21,12 @@
 </p>
 
 <p align="center">
+  <strong>Reference implementation of a Day 0 → Day 4 edge platform lifecycle</strong><br/>
+  Migrating 3,000+ Woolworths AU+NZ stores from Windows/VMware to RHEL 9 + MicroShift/SNO<br/>
+  Zero human touch from hardware power-on to first transaction — ~25 minutes per store
+</p>
+
+<p align="center">
 <strong>Reference implementation of a Day 0 → Day 4 edge platform lifecycle</strong>
 
 Migrating 3,000+ Woolworths AU+NZ stores from Windows/VMware to RHEL 9 + MicroShift/SNO
