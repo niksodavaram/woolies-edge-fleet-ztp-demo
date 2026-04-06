@@ -1,17 +1,31 @@
 # Woolworths Edge Fleet — Zero-Touch Provisioning (ZTP)
  
 <p align="center">
-  <img alt="RHEL 9" src="https://img.shields.io/badge/RHEL-9_for_Edge-EE0000?logo=redhat&logoColor=white" />
-  <img alt="MicroShift" src="https://img.shields.io/badge/MicroShift-4.16-EE0000?logo=redhatopenshift&logoColor=white" />
-  <img alt="SNO" src="https://img.shields.io/badge/OpenShift-SNO_(large_stores)-EE0000?logo=redhatopenshift&logoColor=white" />
-  <img alt="ACM" src="https://img.shields.io/badge/Red_Hat_ACM-fleet_mgmt-EE0000?logo=redhat&logoColor=white" />
-  <img alt="ArgoCD" src="https://img.shields.io/badge/ArgoCD-GitOps-F4821F?logo=argo&logoColor=white" />
-  <img alt="Ansible" src="https://img.shields.io/badge/Ansible-fleet_hardening-EE0000?logo=ansible&logoColor=white" />
-  <img alt="Vault" src="https://img.shields.io/badge/Vault-secrets-000000?logo=vault&logoColor=white" />
-  <img alt="KubeVirt" src="https://img.shields.io/badge/KubeVirt-Windows_bridge-326CE5?logo=kubernetes&logoColor=white" />
-  <img alt="MQTT" src="https://img.shields.io/badge/MQTT-cold_chain_IoT-660066?logo=eclipsemosquitto&logoColor=white" />
-  <img alt="RTI DDS" src="https://img.shields.io/badge/RTI_DDS-low_latency_bus-FF6600" />
-  <img alt="Kafka" src="https://img.shields.io/badge/Kafka-event_streaming-231F20?logo=apachekafka&logoColor=white" />
+<img alt="RHEL 9" src="https://img.shields.io/badge/RHEL-9_for_Edge-EE0000?logo=redhat&logoColor=white" />
+<img alt="MicroShift" src="https://img.shields.io/badge/MicroShift-4.16-EE0000?logo=redhatopenshift&logoColor=white" />
+<img alt="SNO" src="https://img.shields.io/badge/OpenShift-SNO_(large_stores)-EE0000?logo=redhatopenshift&logoColor=white" />
+<img alt="ACM" src="https://img.shields.io/badge/Red_Hat_ACM-fleet_mgmt-EE0000?logo=redhat&logoColor=white" />
+<img alt="ArgoCD" src="https://img.shields.io/badge/ArgoCD-GitOps-F4821F?logo=argo&logoColor=white" />
+<img alt="Ansible" src="https://img.shields.io/badge/Ansible-fleet_hardening-EE0000?logo=ansible&logoColor=white" />
+<img alt="Vault" src="https://img.shields.io/badge/Vault-secrets-000000?logo=vault&logoColor=white" />
+<img alt="KubeVirt" src="https://img.shields.io/badge/KubeVirt-Windows_bridge-326CE5?logo=kubernetes&logoColor=white" />
+<img alt="MQTT" src="https://img.shields.io/badge/MQTT-cold_chain_IoT-660066?logo=eclipsemosquitto&logoColor=white" />
+<img alt="RTI DDS" src="https://img.shields.io/badge/RTI_DDS-low_latency_bus-FF6600" />
+<img alt="Kafka" src="https://img.shields.io/badge/Kafka-event_streaming-231F20?logo=apachekafka&logoColor=white" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/niksodavaram/woolies-edge-fleet-ztp-demo/actions/workflows/04-infra-tests.yml">
+    <img alt="04 · Infrastructure Tests" src="https://github.com/niksodavaram/woolies-edge-fleet-ztp-demo/actions/workflows/04-infra-tests.yml/badge.svg" />
+  </a>
+</p>
+
+<p align="center">
+<strong>Reference implementation of a Day 0 → Day 4 edge platform lifecycle</strong>
+
+Migrating 3,000+ Woolworths AU+NZ stores from Windows/VMware to RHEL 9 + MicroShift/SNO
+
+Zero human touch from hardware power-on to first transaction — ~25 minutes per store
 </p>
  
 <p align="center">
@@ -166,7 +180,7 @@ stateDiagram-v2
 ## Repository Structure
  
 ```
-woolies-edge-fleet-ztp/
+woolies-edge-fleet-ztp-demo/
 │
 ├── 00-provisioning/              # Day 0 — Golden Image + ZTP
 │   ├── image-builder/            # RHEL Image Builder blueprint (image.toml)
@@ -177,9 +191,11 @@ woolies-edge-fleet-ztp/
 │   ├── inventory/                # 3,000 store inventory · phases · groups · states
 │   ├── roles/
 │   │   ├── hardening/            # SELinux · SSH · firewall · auditd · AIDE · CIS
-│   │   ├── k8s-prep/             # kernel modules · sysctl · swap off · openshift-install
+│   │   │   └── molecule/         # Molecule scenario: CIS + SELinux + SSH tests
 │   │   ├── networking/           # bonded NICs · VLANs · SD-WAN integration
-│   │   └── telemetry/            # Prometheus node exporter · Promtail bootstrap
+│   │   │   └── molecule/         # Molecule scenario: firewall + nmstate tests
+│   │   └── k8s-prep/             # kernel modules · sysctl · CRI-O · registries
+│   │       └── molecule/         # Molecule scenario: CRI-O + registry + metadata
 │   └── site-bootstrap.yml        # Master playbook
 │
 ├── 02-infrastructure/            # Day 1.5 — OpenShift MicroShift + SNO
@@ -189,35 +205,52 @@ woolies-edge-fleet-ztp/
 │   └── microshift/               # MicroShift config.yaml + LVMS storage layout
 │
 ├── 03-workloads/                 # Day 2 — Business Apps + Messaging
-│   ├── pos/                      # POS container workload (offline-capable)
-│   ├── inventory/                # Real-time inventory service
-│   ├── cold-chain/               # Cold chain monitor (MQTT subscriber + threshold alerts)
-│   ├── loyalty/                  # Everyday Rewards local calculation pod
-│   ├── scan-assist-ai/           # AI microservice infra layer (CPU/GPU overlays)
-│   ├── windows-bridge/           # KubeVirt VM — Windows checkout during P1–P3
-│   ├── iot-mqtt/                 # Mosquitto MQTT broker (:1883 · local retain · LWT)
-│   ├── dds-gateway/              # RTI DDS ↔ MQTT/Kafka bridge (low-latency pub-sub)
-│   ├── observability/            # Prometheus · Thanos · Loki · Grafana · Alertmanager
-│   └── platform-ai/              # MCP agents (rollout controller · auto-heal · CVE gating)
+│   └── ...                       # POS, inventory, cold-chain, DDS, MQTT, Kafka, observability
 │
 ├── 04-secrets-cicd/              # Day 3+ — GitOps · Secrets · Governance
 │   ├── argo-cd/                  # App-of-Apps · AppProject · per-store Applications
 │   ├── external-secrets/         # ESO + Vault SecretStore + ExternalSecret objects
-│   └── vault/                    # Vault policies (least privilege per store + team)
+│   └── tekton/                   # Tekton Tasks: conftest, godog, InSpec, Molecule, ArgoCD sync
+│       └── tasks/
+│           ├── argocd-task.yaml
+│           ├── conftest-task.yaml
+│           ├── godog-task.yaml
+│           ├── inspec-task.yaml
+│           └── molecule-task.yaml
 │
 ├── 05-migration/                 # Migration runbooks + wave config
-│   ├── phases/                   # P0–P4 runbooks with acceptance criteria
-│   ├── rollback/                 # Per-phase rollback procedures
-│   └── wave-config/              # 50 stores/week canary wave definitions
+│   └── ...                       # P0–P4 runbooks, rollback, wave definitions
+│
+├── tests/                        # Test harness — Day 0–Day 2 safety nets
+│   ├── conftest/                 # Policy-as-code (OPA/Rego)
+│   │   ├── provisioning/
+│   │   │   ├── image_toml_test.rego
+│   │   │   └── kickstart_test.rego
+│   │   ├── infrastructure/
+│   │   │   └── manifests_test.rego
+│   │   └── workloads/
+│   │       ├── pos_test.rego
+│   │       └── secrets_test.rego
+│   ├── inspec/                   # CIS + OS health (InSpec)
+│   │   └── cis-rhel9/
+│   │       └── controls/
+│   │           ├── selinux.rb
+│   │           ├── greenboot.rb
+│   │           ├── microshift.rb
+│   │           └── cis-partitions.rb
+│   ├── godog/                    # BDD scenarios (Godog)
+│   │   ├── features/
+│   │   │   ├── ztp.feature
+│   │   │   └── migration.feature
+│   │   └── steps/
+│   │       ├── ztp_steps.go
+│   │       └── migration_steps.go
+│   └── .github/
+│       └── workflows/
+│           └── edgepipeline.yml  # Local CI harness: runs tests on push/PR
 │
 └── docs/
-    ├── architecture.md           # Links to interactive architecture diagrams
-    ├── latency-design.md         # RTI DDS + MQTT + Kafka rationale
-    ├── observability.md          # Three-tier Prometheus→Thanos→Grafana pipeline
-    └── adrs/
-        ├── ADR-001-sno-vs-microshift.md
-        ├── ADR-002-kubevirt-windows-bridge.md
-        └── ADR-003-vault-vs-sealed-secrets.md
+    └── ...                       # architecture, observability, ADRs
 ```
  
 ---
@@ -293,6 +326,8 @@ Power on → DHCP lease → SD-WAN ZTP fires (Cisco vManage)
  
 `site-bootstrap.yml` converges every node to a consistent security and networking baseline before OpenShift is installed.
  
+Each bootstrap role (hardening, networking, k8s-prep) has a Molecule scenario under molecule/default/ that is also wired into CI. Before any change lands, the same playbooks used in production are exercised in UBI9 + systemd containers, and assertions are made with ansible.builtin.assert.
+
 ```bash
 # Bootstrap a new store node
 ansible-playbook site-bootstrap.yml \
@@ -404,6 +439,63 @@ spec:
 ### ArgoCD App-of-Apps
  
 One Git commit deploys to all 3,000 stores simultaneously. ArgoCD ApplicationSet generates one Application per store from cluster labels.
+
+### CI & Test Pipeline
+
+This repo treats Day 0–2 configuration as code and tests it like application code:
+
+#### Policy-as-code (Conftest + OPA):
+
+tests/conftest/provisioning/*.rego validate image.toml and Kickstart (packages, SELinux, firewall, migration metadata).
+
+tests/conftest/infrastructure/manifests_test.rego and tests/conftest/workloads/*.rego enforce k8s best practices (no root, no :latest, resource limits, Vault/ESO for secrets only).
+
+#### CIS + OS health (InSpec):
+
+tests/inspec/cis-rhel9/controls/* validate SELinux enforcing, CIS partitioning, audit rules, greenboot, and MicroShift health on a node.
+
+#### BDD flows (Godog):
+
+tests/godog/features/ztp.feature and migration.feature describe ZTP and phased migration as executable specs; steps/*.go use rpm-ostree, journalctl, and kubectl to assert behaviour.
+
+##### Role-level tests (Molecule + Ansible):
+
+01-bootstrap/roles/*/molecule/default/ run converge + verify for hardening, networking, and k8s-prep.
+
+The same tools can run either via Tekton in-cluster (04-secrets-cicd/tekton/tasks/*.yaml) or via GitHub Actions (tests/.github/workflows/edgepipeline.yml) for local/demo CI.
+
+#### CI & Test Pipeline (GitHub Actions)
+Every change that touches provisioning, bootstrap, infrastructure, workloads, secrets, migration, or tests triggers the **04 · Infrastructure Tests** workflow (`.github/workflows/04-infra-tests.yml`) on `main` and on pull requests.
+
+Jobs:
+
+- **Conftest – OPA Policy Tests**  
+  Runs `conftest` against:
+  - `00-provisioning/image-metadata/image.toml`
+  - `00-provisioning/kickstart/store-default.ks` (via JSON wrapper)
+  - `02-infrastructure/manifests/**`
+  - `03-workloads/**`
+  - `04-secrets-cicd/external-secrets/**`
+
+- **Godog – BDD Scenarios (unit mode)**  
+  Builds `tests/godog` and runs the ZTP + migration features with `go test` in **unit mode** (tags `~@live`), so every PR compiles the step defs and exercises the BDD specs without requiring a live node.
+
+- **InSpec – CIS RHEL9 Compliance**  
+  Runs `inspec check` on `tests/inspec/cis-rhel9` and then `inspec exec` against a local container target to validate SELinux, greenboot, MicroShift health, and CIS partitioning controls in a lightweight way.
+
+Molecule scenarios for `hardening`, `networking`, and `k8s-prep` are wired separately (and can also be driven via Tekton tasks under `04-secrets-cicd/tekton/tasks/*.yaml`), giving the same tests in both GitHub Actions and in-cluster CI.
+
+#### Example Tekton tasks (names only):
+
+##### conftest-task.yaml — run policy tests for image.toml, Kickstart, manifests.
+
+##### molecule-task.yaml — run Molecule on Ansible roles.
+
+##### inspec-task.yaml — run CIS/InSpec checks.
+
+##### godog-task.yaml — run BDD scenarios for ZTP + migration.
+
+##### argocd-task.yaml — Argo CD sync/tests as part of the pipeline.
  
 ```yaml
 # 04-secrets-cicd/argo-cd/app-of-apps.yaml (excerpt)
@@ -487,18 +579,20 @@ MCP agents run on the central hub and evolve from reactive (Phase 2) to proactiv
  
 ## Security and Compliance
  
-| Control | Implementation |
-|---|---|
-| ✅ Immutable OS | RHEL image mode (ostree) — every store boots identical signed image |
-| ✅ Automatic rollback | greenboot health checks + ostree — bad image rolled back in < 5 min, no engineer visit |
-| ✅ SELinux enforcing | Applied at image build time. Workloads run under restricted SCC. `audit2allow` for exceptions only — never `setenforce 0` |
-| ✅ CIS RHEL 9 Level 2 | Enforced via RHEL Image Builder + Ansible hardening role. OpenSCAP scan in CI |
-| ✅ Zero secrets in Git | All credentials fetched from Vault via External Secrets Operator at runtime |
-| ✅ Least-privilege Vault | Per-store, per-team Vault policies. `woolies-edge-fleet` role scoped to store namespace |
-| ✅ Network segmentation | Bonded NICs, VLANs, SD-WAN. Minimal exposed services. Port 6443 (OCP API) and 443 only |
-| ✅ Disconnected-safe | Internal mirror registry `registry.woolies.internal:5000`. Stores operate with no direct internet |
-| ✅ Image provenance | TOML blueprint + Packer manifest + CI logs. `/etc/woolies/image.toml` stamped on every node |
-| ✅ Pipeline compliance gates | CIS scan, OpenSCAP, container image scan on every PR to `main` |
+| Control                     | Implementation                                                                                                            |
+| -----------------------------| ---------------------------------------------------------------------------------------------------------------------------|
+| ✅ Immutable OS              | RHEL image mode (ostree) — every store boots identical signed image                                                       |
+| ✅ Automatic rollback        | greenboot health checks + ostree — bad image rolled back in < 5 min, no engineer visit                                    |
+| ✅ SELinux enforcing         | Applied at image build time. Workloads run under restricted SCC. `audit2allow` for exceptions only — never `setenforce 0` |
+| ✅ CIS RHEL 9 Level 2        | Enforced via RHEL Image Builder + Ansible hardening role. OpenSCAP scan in CI                                             |
+| ✅ Zero secrets in Git       | All credentials fetched from Vault via External Secrets Operator at runtime                                               |
+| ✅ Least-privilege Vault     | Per-store, per-team Vault policies. `woolies-edge-fleet` role scoped to store namespace                                   |
+| ✅ Network segmentation      | Bonded NICs, VLANs, SD-WAN. Minimal exposed services. Port 6443 (OCP API) and 443 only                                    |
+| ✅ Disconnected-safe         | Internal mirror registry `registry.woolies.internal:5000`. Stores operate with no direct internet                         |
+| ✅ Image provenance          | TOML blueprint + Packer manifest + CI logs. `/etc/woolies/image.toml` stamped on every node                               |
+| ✅ Pipeline compliance gates | CIS scan, OpenSCAP, container image scan on every PR to `main`                                                            |
+
+CIS, SELinux, firewall, and partitioning expectations are codified twice: once in the Ansible roles and again in Conftest/InSpec tests under tests/, so regressions are caught at both the playbook and node layers before rollout.
  
 ---
  
@@ -550,7 +644,27 @@ kustomize build . | oc apply -f -
 kubectl apply -f 04-secrets-cicd/argo-cd/project-woolies-edge-fleet.yaml
 kubectl apply -f 04-secrets-cicd/argo-cd/app-of-apps.yaml
 ```
- 
+
+### Quick Start — Zero-Touch Path (new store)
+
+```
+# Run policy tests (OPA/Conftest)
+conftest test \
+  00-provisioning/image-builder/image.toml \
+  --policy tests/conftest/provisioning
+
+# Run Ansible Molecule for bootstrap roles
+cd 01-bootstrap/roles/hardening && molecule test
+cd ../networking && molecule test
+cd ../k8s-prep && molecule test
+
+# Run BDD specs (Godog)
+cd ../../../tests/godog
+go test ./... -v
+
+# Run CIS/InSpec profile (against a test node)
+inspec exec tests/inspec/cis-rhel9 -t ssh://root@<node-ip> --sudo
+```
 ---
  
 ## Branching and Contributing
