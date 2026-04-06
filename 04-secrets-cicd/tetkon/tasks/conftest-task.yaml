@@ -1,0 +1,61 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: conftest-task
+  namespace: tekton-pipelines
+spec:
+  description: Run OPA/Conftest policy tests for provisioning, infrastructure, workloads, and secrets.
+
+  params:
+    - name: repo-url
+      type: string
+    - name: revision
+      type: string
+
+  workspaces:
+    - name: source
+
+  steps:
+    - name: clone
+      image: alpine/git:2.45.2
+      workingDir: $(workspaces.source.path)
+      script: |
+        set -eu
+        if [ ! -d repo/.git ]; then
+          git clone $(params.repo-url) repo
+        fi
+        cd repo
+        git fetch --all --tags
+        git checkout $(params.revision)
+
+    - name: install-conftest
+      image: alpine:3.20
+      workingDir: $(workspaces.source.path)/repo
+      script: |
+        set -eu
+        apk add --no-cache curl tar python3
+        curl -sL https://github.com/open-policy-agent/conftest/releases/download/v0.50.0/conftest_0.50.0_Linux_x86_64.tar.gz \
+          | tar -xz -C /usr/local/bin conftest
+
+        python3 - <<'PY' > /tmp/kickstart.json
+        import json, pathlib
+        ks = pathlib.Path('00-provisioning/kickstart/store-default.ks').read_text()
+        print(json.dumps({'content': ks}))
+        PY
+
+        conftest test 00-provisioning/image-metadata/image.toml \
+          --policy tests/conftest/provisioning
+
+        conftest test /tmp/kickstart.json \
+          --policy tests/conftest/provisioning
+
+        conftest test 02-infrastructure/manifests/ \
+          --policy tests/conftest/infrastructure \
+          --all-namespaces
+
+        conftest test 03-workloads/ \
+          --policy tests/conftest/workloads \
+          --all-namespaces
+
+        conftest test 04-secrets-cicd/external-secrets/ \
+          --policy tests/conftest/workloads

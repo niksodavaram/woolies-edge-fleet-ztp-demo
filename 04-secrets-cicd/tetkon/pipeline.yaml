@@ -1,0 +1,97 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: woolies-edge-infra-pipeline
+  namespace: tekton-pipelines
+spec:
+  description: >
+    CI pipeline for the Woolies Edge Fleet ZTP demo:
+    policy tests, Molecule, Godog, InSpec, then Argo CD validation.
+
+  params:
+    - name: repo-url
+      type: string
+      default: https://github.com/niksodavaram/woolies-edge-fleet-ztp-demo.git
+    - name: revision
+      type: string
+      default: main
+    - name: run-argocd
+      type: string
+      default: "true"
+    - name: store-overlay
+      type: string
+      default: "store-NSW-042"
+
+  workspaces:
+    - name: shared-workspace
+
+  tasks:
+    - name: conftest
+      taskRef:
+        name: conftest-task
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: molecule
+      runAfter: ["conftest"]
+      taskRef:
+        name: molecule-task
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: godog
+      runAfter: ["molecule"]
+      taskRef:
+        name: godog-task
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: inspec
+      runAfter: ["godog"]
+      taskRef:
+        name: inspec-task
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: argocd
+      runAfter: ["inspec"]
+      when:
+        - input: "$(params.run-argocd)"
+          operator: in
+          values: ["true"]
+      taskRef:
+        name: argocd-task
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+        - name: store-overlay
+          value: $(params.store-overlay)
+      workspaces:
+        - name: source
+          workspace: shared-workspace

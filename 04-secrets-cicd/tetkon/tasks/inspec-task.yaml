@@ -1,0 +1,41 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: inspec-task
+  namespace: tekton-pipelines
+spec:
+  description: Run InSpec syntax and local CIS profile checks.
+
+  params:
+    - name: repo-url
+      type: string
+    - name: revision
+      type: string
+
+  workspaces:
+    - name: source
+
+  steps:
+    - name: clone
+      image: chef/inspec:5
+      workingDir: $(workspaces.source.path)
+      script: |
+        set -eu
+        apk add --no-cache git || true
+        if [ ! -d repo/.git ]; then
+          git clone $(params.repo-url) repo
+        fi
+        cd repo
+        git fetch --all --tags
+        git checkout $(params.revision)
+
+    - name: run-inspec
+      image: chef/inspec:5
+      workingDir: $(workspaces.source.path)/repo
+      script: |
+        set -eux
+        inspec check tests/inspec/cis-rhel9 --no-backend-cache
+        inspec exec tests/inspec/cis-rhel9 \
+          --target local:// \
+          --reporter cli \
+          --no-backend-cache || true

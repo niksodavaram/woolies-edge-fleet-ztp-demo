@@ -496,6 +496,16 @@ Molecule scenarios for `hardening`, `networking`, and `k8s-prep` are wired separ
 ##### godog-task.yaml — run BDD scenarios for ZTP + migration.
 
 ##### argocd-task.yaml — Argo CD sync/tests as part of the pipeline.
+
+```
+### Tekton CI (in-cluster)
+
+For OpenShift-native CI, this repo also includes Tekton resources under `04-secrets-cicd/tekton/`:
+
+- `tasks/` — reusable Tasks for Conftest, Molecule, Godog, InSpec, and ArgoCD checks
+- `pipeline.yaml` — sequences all tasks into a single infrastructure validation pipeline
+- `event-listener.yaml` — GitHub webhook entry point that creates PipelineRuns automatically
+```
  
 ```yaml
 # 04-secrets-cicd/argo-cd/app-of-apps.yaml (excerpt)
@@ -696,10 +706,10 @@ Run `pre-commit` (YAML lint + Ansible lint + OpenSCAP) before pushing.
 ---
  
 ## Author
- 
-**Nireekshan Sodavaram** — PhD Computer Science · NV1 Security Cleared  
+
+**Nireekshan Sodavaram** — PhD (Computer Science) · NV1 security cleared  
 Lead Systems & Edge Infrastructure Engineer  
 [nik.sodavaram@outlook.com](mailto:nik.sodavaram@outlook.com) · [github.com/niksodavaram](https://github.com/niksodavaram)
- 
-*Reference design for WooliesX Edge Infra Linux Engineer interview — 7 April 2025*
-*All technology references based solely on publicly available information.*
+
+*Personal reference design for a WooliesX Edge Infrastructure / Linux Engineer role (April 2025).*  
+*All technology references are based solely on publicly available information and do not represent official Woolworths/WooliesX documentation.*

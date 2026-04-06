@@ -1,0 +1,64 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: woolies-edge-github-listener
+  namespace: tekton-pipelines
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: github-pr-and-push
+      interceptors:
+        - ref:
+            name: github
+          params:
+            - name: eventTypes
+              value: ["push", "pull_request"]
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: "body.repository.full_name == 'niksodavaram/woolies-edge-fleet-ztp-demo'"
+      bindings:
+        - inline:
+            params:
+              - name: repo-url
+                value: "$(body.repository.clone_url)"
+              - name: revision
+                value: "$(body.ref.split('/')[2])"
+      template:
+        inline:
+          apiVersion: triggers.tekton.dev/v1beta1
+          kind: TriggerTemplate
+          metadata:
+            name: woolies-edge-template
+          spec:
+            params:
+              - name: repo-url
+              - name: revision
+            resourcetemplates:
+              - apiVersion: tekton.dev/v1
+                kind: PipelineRun
+                metadata:
+                  generateName: woolies-edge-infra-run-
+                spec:
+                  pipelineRef:
+                    name: woolies-edge-infra-pipeline
+                  params:
+                    - name: repo-url
+                      value: $(tt.params.repo-url)
+                    - name: revision
+                      value: $(tt.params.revision)
+                    - name: run-argocd
+                      value: "true"
+                    - name: store-overlay
+                      value: "store-NSW-042"
+                  taskRunTemplate:
+                    serviceAccountName: pipeline
+                  workspaces:
+                    - name: shared-workspace
+                      volumeClaimTemplate:
+                        spec:
+                          accessModes: ["ReadWriteOnce"]
+                          resources:
+                            requests:
+                              storage: 5Gi

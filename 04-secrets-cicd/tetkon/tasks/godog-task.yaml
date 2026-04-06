@@ -1,17 +1,15 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: argocd-task
+  name: godog-task
   namespace: tekton-pipelines
 spec:
-  description: Validate ArgoCD manifests and optionally dry-run overlay render.
+  description: Build and run Godog BDD tests in unit mode.
 
   params:
     - name: repo-url
       type: string
     - name: revision
-      type: string
-    - name: store-overlay
       type: string
 
   workspaces:
@@ -19,10 +17,11 @@ spec:
 
   steps:
     - name: clone
-      image: alpine/git:2.45.2
+      image: golang:1.22
       workingDir: $(workspaces.source.path)
       script: |
         set -eu
+        apt-get update && apt-get install -y git
         if [ ! -d repo/.git ]; then
           git clone $(params.repo-url) repo
         fi
@@ -30,10 +29,11 @@ spec:
         git fetch --all --tags
         git checkout $(params.revision)
 
-    - name: validate-argocd
-      image: bitnami/kubectl:1.30
-      workingDir: $(workspaces.source.path)/repo
+    - name: run-godog
+      image: golang:1.22
+      workingDir: $(workspaces.source.path)/repo/tests/godog
       script: |
         set -eux
-        kubectl apply --dry-run=client -f 04-secrets-cicd/argo-cd/ || true
-        test -d 02-infrastructure/manifests/overlays/$(params.store-overlay) && echo "Overlay exists"
+        go mod tidy
+        go build ./...
+        go test ./... -v -tags=unit --godog.format=pretty --godog.tags="~@live"

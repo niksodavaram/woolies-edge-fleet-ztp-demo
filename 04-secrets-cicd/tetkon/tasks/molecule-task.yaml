@@ -1,0 +1,50 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: molecule-task
+  namespace: tekton-pipelines
+spec:
+  description: Run Molecule tests for hardening, networking, and k8s-prep roles.
+
+  params:
+    - name: repo-url
+      type: string
+    - name: revision
+      type: string
+
+  workspaces:
+    - name: source
+
+  steps:
+    - name: clone
+      image: python:3.12-slim
+      workingDir: $(workspaces.source.path)
+      script: |
+        set -eu
+        apt-get update && apt-get install -y git
+        if [ ! -d repo/.git ]; then
+          git clone $(params.repo-url) repo
+        fi
+        cd repo
+        git fetch --all --tags
+        git checkout $(params.revision)
+
+    - name: run-molecule
+      image: python:3.12-slim
+      securityContext:
+        privileged: true
+      workingDir: $(workspaces.source.path)/repo
+      script: |
+        set -eux
+        apt-get update
+        apt-get install -y docker.io systemd
+        pip install --no-cache-dir ansible molecule molecule-docker ansible-lint yamllint
+
+        cd 01-bootstrap/roles/hardening
+        molecule test
+
+        cd ../networking
+        molecule test
+
+        cd ../k8s-prep
+        molecule test
