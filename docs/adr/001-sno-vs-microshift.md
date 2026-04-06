@@ -9,7 +9,8 @@
 
 ## Context
 
-WooliesX is migrating 3,000+ stores from Windows/VMware to a RHEL-based container platform.
+This reference design assumes a fleet of 3,000+ retail stores moving from a legacy Windows/VMware edge estate to a RHEL‑based container platform.
+
 Stores vary significantly in size, hardware capacity, and workload requirements.
 Two OpenShift-family options are available for edge deployments:
 
