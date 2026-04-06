@@ -25,27 +25,119 @@
   Migrating 3,000+ Woolworths AU+NZ stores from Windows/VMware to RHEL 9 + MicroShift/SNO<br/>
   Zero human touch from hardware power-on to first transaction — ~25 minutes per store
 </p>
-
-<p align="center">
-<strong>Reference implementation of a Day 0 → Day 4 edge platform lifecycle</strong>
-
-Migrating 3,000+ Woolworths AU+NZ stores from Windows/VMware to RHEL 9 + MicroShift/SNO
-
-Zero human touch from hardware power-on to first transaction — ~25 minutes per store
-</p>
- 
-<p align="center">
-  <strong>Reference implementation of a Day 0 → Day 4 edge platform lifecycle</strong><br/>
-  Migrating 3,000+ Woolworths AU+NZ stores from Windows/VMware to RHEL 9 + MicroShift/SNO<br/>
-  Zero human touch from hardware power-on to first transaction — ~25 minutes per store
-</p>
  
 ---
  
-> **Disclaimer:** This is a personal reference design created by Nireekshan Sodavaram for interview and demonstration purposes. It is not internal Woolworths/WooliesX documentation. All technology references are based solely on publicly available information. In a real deployment this would be adapted to Woolworths' existing tooling, networks, and governance.
+> **Disclaimer:** This is a personal reference design created by Nireekshan Sodavaram for interview and demonstration purposes. It is not internal Woolworths/WooliesX documentation. All technology references are based solely on publicly available information.
  
 ---
- 
+## Quickstart – Run the Tests Locally
+
+These examples give people something real to run in 5–10 minutes.
+
+```bash
+git clone https://github.com/niksodavaram/woolies-edge-fleet-ztp-demo.git
+cd woolies-edge-fleet-ztp-demo
+```
+
+### 1. Policy-as-code (Conftest + OPA)
+
+Requirements: Docker or Podman.
+
+```bash
+docker run --rm -v "$PWD":/src -w /src openpolicyagent/conftest:v0.50.0 \
+  test 00-provisioning/image-metadata/image.toml \
+  --policy tests/conftest/provisioning
+
+docker run --rm -v "$PWD":/src -w /src openpolicyagent/conftest:v0.50.0 \
+  test 02-infrastructure/manifests/ \
+  --policy tests/conftest/infrastructure --all-namespaces
+```
+
+### 2. Ansible bootstrap roles (Molecule)
+
+Requirements: Python 3, Docker.
+
+```bash
+cd 01-bootstrap/roles/hardening
+python3 -m venv .venv
+source .venv/bin/activate
+pip install "molecule[docker]" ansible ansible-lint
+molecule test
+```
+
+### 3. BDD specs (Godog – unit mode)
+
+Requirements: Go 1.22+.
+
+```bash
+cd tests/godog
+go test ./... -v -tags=unit --godog.format=pretty --godog.tags="~@live"
+```
+
+### 4. CIS / OS health (InSpec – local)
+
+Requirements: InSpec CLI.
+
+```bash
+cd tests/inspec/cis-rhel9
+inspec check .
+inspec exec . --target local://
+```
+## Quickstart – Run the Tests Locally
+
+These examples give people something real to run in 5–10 minutes.
+
+```bash
+git clone https://github.com/niksodavaram/woolies-edge-fleet-ztp-demo.git
+cd woolies-edge-fleet-ztp-demo
+```
+
+### 1. Policy-as-code (Conftest + OPA)
+
+Requirements: Docker or Podman.
+
+```bash
+docker run --rm -v "$PWD":/src -w /src openpolicyagent/conftest:v0.50.0 \
+  test 00-provisioning/image-metadata/image.toml \
+  --policy tests/conftest/provisioning
+
+docker run --rm -v "$PWD":/src -w /src openpolicyagent/conftest:v0.50.0 \
+  test 02-infrastructure/manifests/ \
+  --policy tests/conftest/infrastructure --all-namespaces
+```
+
+### 2. Ansible bootstrap roles (Molecule)
+
+Requirements: Python 3, Docker.
+
+```bash
+cd 01-bootstrap/roles/hardening
+python3 -m venv .venv
+source .venv/bin/activate
+pip install "molecule[docker]" ansible ansible-lint
+molecule test
+```
+
+### 3. BDD specs (Godog – unit mode)
+
+Requirements: Go 1.22+.
+
+```bash
+cd tests/godog
+go test ./... -v -tags=unit --godog.format=pretty --godog.tags="~@live"
+```
+
+### 4. CIS / OS health (InSpec – local)
+
+Requirements: InSpec CLI.
+
+```bash
+cd tests/inspec/cis-rhel9
+inspec check .
+inspec exec . --target local://
+```
+
 ## Why This Exists
  
 Woolworths runs 3,000+ stores across AU and NZ on a legacy Windows/VMware edge estate. Every store has a local server running POS, inventory, self-checkout, cold chain monitoring and loyalty — all on fragile Windows VMs that require on-site engineers for updates, have no fleet visibility, and fail silently when WAN drops.
