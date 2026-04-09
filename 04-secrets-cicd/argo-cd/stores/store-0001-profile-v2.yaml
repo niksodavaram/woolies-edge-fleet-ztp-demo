@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: woolies-store-0001-apps
+  namespace: argocd
+  labels:
+    woolies.store/id: "store-0001"
+    woolies.store/profile: "v2"
+spec:
+  project: woolies-edge-fleet
+
+  source:
+    repoURL: https://github.com/niksodavaram/infra-enterprise
+    targetRevision: main
+    path: 02-apps/domains/retail-store-v2
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: woolies-store-0001
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
