@@ -40,7 +40,7 @@ jobs:
           packer build -var-file=vars/store-prod.pkrvars.hcl rhel9-edge.pkr.hcl
 
       - name: Upload Packer artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: packer-output
           path: 00-provisioning/packer/output/
